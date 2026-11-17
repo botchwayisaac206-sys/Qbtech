@@ -8,14 +8,16 @@ import ListPager, { usePaged } from '@/components/admin/ListPager'
 
 const DEFAULT_ACCENT = '#0a7cff'
 
+/** Windowed viewers see the last 24 hours only (RLS enforces it; this keeps a warm cache in step). */
+const clampRows = (rs: ExpRow[], windowed: boolean) => windowed ? rs.filter(r => withinWindow(r.incurred_at)) : rs
+
 export default function Expenses({ canSeeAmounts, userId, windowed = false, accent = DEFAULT_ACCENT }: { canSeeAmounts: boolean; userId: string | null; windowed?: boolean; accent?: string }) {
   const table    = 'expenses'
-  const fetcher  = fetchExpenses
   const [reveal, setReveal] = useState(canSeeAmounts)
 
   // Windowed viewers see the last 24 hours only. RLS enforces this server-side;
   // the same clamp here keeps a warm cache from showing anything older.
-  const clamp = (rs: ExpRow[]) => windowed ? rs.filter(r => withinWindow(r.incurred_at)) : rs
+  const clamp = (rs: ExpRow[]) => clampRows(rs, windowed)
   const warmRows = peek<ExpRow[]>(scopedKey('expenses'))
   const [rows, setRows]     = useState<ExpRow[]>(clamp(warmRows || []))
   const [loading, setLoading] = useState(warmRows === undefined)
@@ -30,8 +32,8 @@ export default function Expenses({ canSeeAmounts, userId, windowed = false, acce
     let cancelled = false
     ;(async () => {
       try {
-        const data = await fetcher()
-        if (!cancelled) setRows(clamp(data))
+        const data = await fetchExpenses()
+        if (!cancelled) setRows(clampRows(data, windowed))
       } catch (err) {
         if (!cancelled) console.warn('Expenses load failed:', err)
       } finally {

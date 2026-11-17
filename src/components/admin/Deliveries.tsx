@@ -15,12 +15,14 @@ const PAYMENT_METHODS = ['Cash', 'Mobile Money'] as const
  * 8-hour staff window, same RLS — only the table (and so the dashboard the
  * amounts roll into) changes.
  */
+/** Windowed viewers see the last 24 hours only (RLS enforces it; this keeps a warm cache in step). */
+const clampRows = (rs: DelRow[], windowed: boolean) => windowed ? rs.filter(r => withinWindow(r.delivered_at)) : rs
+
 export default function Deliveries({ isBoss, userId, windowed = false, accent = DEFAULT_ACCENT }: { isBoss: boolean; userId: string | null; windowed?: boolean; accent?: string }) {
   const table   = 'deliveries'
-  const fetcher = fetchDeliveries
   // Windowed viewers see the last 24 hours only. RLS enforces this server-side;
   // the same clamp here keeps a warm cache from showing anything older.
-  const clamp = (rs: DelRow[]) => windowed ? rs.filter(r => withinWindow(r.delivered_at)) : rs
+  const clamp = (rs: DelRow[]) => clampRows(rs, windowed)
   const warmRows = peek<DelRow[]>(scopedKey('deliveries'))
   const [rows, setRows]       = useState<DelRow[]>(clamp(warmRows || []))
   const [loading, setLoading] = useState(warmRows === undefined)
@@ -37,8 +39,8 @@ export default function Deliveries({ isBoss, userId, windowed = false, accent = 
     let cancelled = false
     ;(async () => {
       try {
-        const data = await fetcher()
-        if (!cancelled) setRows(clamp(data))
+        const data = await fetchDeliveries()
+        if (!cancelled) setRows(clampRows(data, windowed))
       } catch (err) {
         if (!cancelled) console.warn('Deliveries load failed:', err)
       } finally {
@@ -53,7 +55,7 @@ export default function Deliveries({ isBoss, userId, windowed = false, accent = 
   useEffect(() => {
     const onLogged = (e: Event) => {
       if ((e as CustomEvent).detail !== table) return
-      fetcher().then(data => setRows(clamp(data))).catch(() => { /* shown on next open */ })
+      fetchDeliveries().then(data => setRows(clampRows(data, windowed))).catch(() => { /* shown on next open */ })
     }
     window.addEventListener(DELIVERY_LOGGED, onLogged)
     return () => window.removeEventListener(DELIVERY_LOGGED, onLogged)

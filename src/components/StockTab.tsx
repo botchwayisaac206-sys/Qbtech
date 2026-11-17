@@ -654,7 +654,8 @@ export default function StockTab({ darkMode, onToggleDark, isSuperBoss = false }
       setLoading(false)
     }
     init()
-  }, [])
+    // The three fetchers are stable (useCallback with no dependencies), so this still runs once.
+  }, [fetchWarehouses, fetchStock, fetchPrices])
 
   // ── Save stock item (insert or update) ───────────────────
   const handleSaveStock = async (item: StockItem) => {

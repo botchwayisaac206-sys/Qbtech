@@ -92,7 +92,8 @@ export default function SalesDashboard({ isBoss, windowed = false }: { isBoss: b
   useEffect(() => {
     let cancelled = false
     setError(null)
-    if (!hasWarmCache) setLoading(true)
+    // Read the cache here rather than from render, so the effect depends on nothing stale.
+    if (peek<InvRow[]>(scopedKey('invoices')) === undefined) setLoading(true)
     // Cache is stale-while-revalidate: first load awaits, subsequent loads
     // return cached data instantly and refresh in the background. A failed
     // background refresh surfaces via console, never as a blocking error.

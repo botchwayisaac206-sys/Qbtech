@@ -114,6 +114,10 @@ const parseLoc = (key: string) => {
   return { line: key.slice(0, i) as StockLine, name: key.slice(i + 1) }
 }
 
+/** The columns a movement-history read asks for, on either line's tables. */
+const historyCols = (itemsTable: string, lines: string, otherModel: string) =>
+  `id,transfer_number,kind,from_warehouse,to_warehouse,${lines}supplier,note,signed_by,staff_id,transferred_at,items:${itemsTable}(model,quantity,position,condition${otherModel})`
+
 export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false, dahua = false, accent }: {
   dark: boolean
   canWrite: boolean
@@ -250,7 +254,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
     if (!quiet) setHistoryLoading(true)
     const read = (lines: string, otherModel: string) => supabase
       .from(tables.transfers)
-      .select(historyCols(lines, otherModel))
+      .select(historyCols(tables.items, lines, otherModel))
       .order('transferred_at', { ascending: false })
       .limit(300)
     let { data, error } = await read('from_line,to_line,', ',other_model')
@@ -264,8 +268,6 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
     setHistoryLoading(false)
   }, [isBoss, tables])
 
-  const historyCols = (lines: string, otherModel: string) =>
-    `id,transfer_number,kind,from_warehouse,to_warehouse,${lines}supplier,note,signed_by,staff_id,transferred_at,items:${tables.items}(model,quantity,position,condition${otherModel})`
 
   // Every entry, paged past the 1000-row cap — only once someone searches.
   const searching = query.trim().length > 0
@@ -273,7 +275,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
     if (!searching || allHistory || allLoading || !isBoss) return
     setAllLoading(true)
     const all = (lines: string, otherModel: string) => fetchAllRows<TransferRow>((f, t) => supabase
-      .from(tables.transfers).select(historyCols(lines, otherModel)).order('id').range(f, t) as any)
+      .from(tables.transfers).select(historyCols(tables.items, lines, otherModel)).order('id').range(f, t) as any)
     all('from_line,to_line,', ',other_model')
       .catch(() => all('', ''))
       .then(rows => setAllHistory(rows.sort((a, b) => b.transferred_at.localeCompare(a.transferred_at))))
