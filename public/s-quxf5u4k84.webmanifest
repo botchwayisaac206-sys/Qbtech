@@ -1,0 +1,17 @@
+{
+  "name": "QBNET TECH SOLUTIONS",
+  "short_name": "QBNET TECH",
+  "description": "Record stock movements between QBNET TECH locations.",
+  "id": "/s-quxf5u4k84",
+  "start_url": "/s-quxf5u4k84",
+  "scope": "/s-quxf5u4k84",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/s-quxf5u4k84-192.png?v=2", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/s-quxf5u4k84-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/s-quxf5u4k84-maskable-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

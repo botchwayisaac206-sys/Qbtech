@@ -1,0 +1,181 @@
+/* Fallbacks for devices without Apple's San Francisco (Windows, Android).
+   Apple devices use the real SF via -apple-system and never load these. */
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+/* ============================================================================
+   QBNET TECH — glass theme for the whole site (shop and admin panel).
+   Every colour lives here. The theme is chosen by <html data-qb-theme>,
+   set before first paint by app/layout.tsx and switched by useQbTheme().
+
+   The idea: clear iOS-style glass over a bright wallpaper. The wallpaper is
+   QBNET blue warmed by Ghana's gold and green, so the frost always has colour
+   to pick up and the site reads as this company, not a template.
+   ============================================================================ */
+
+[data-qb-theme] {
+  /* Apple's type system: SF Pro Text for reading, SF Pro Display for headlines.
+     SF is licensed for Apple devices only, so it cannot be served to others;
+     they get the closest free matches, Inter and Inter Tight. */
+  --qb-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --qb-font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter Tight", "Inter", system-ui, sans-serif;
+  --qb-accent: #0a7cff;
+  --qb-on-accent: #ffffff;
+  --qb-radius: 20px;
+  --qb-blur: blur(30px) saturate(200%);
+  --qb-gold: #f5b70a;
+  --qb-ghana-green: #0a8a4a;
+}
+
+/* ── Light (the default): bright wallpaper, clear white glass ───────────── */
+[data-qb-theme="light"] {
+  --qb-bg: #eaf0f8;
+  --qb-wall-1: rgba(10, 124, 255, 0.42);   /* QBNET blue  */
+  --qb-wall-2: rgba(252, 196, 25, 0.38);   /* Ghana gold  */
+  --qb-wall-3: rgba(16, 168, 92, 0.26);    /* Ghana green */
+  --qb-wall-4: rgba(90, 200, 250, 0.34);   /* sky         */
+  --qb-card: rgba(255, 255, 255, 0.56);
+  --qb-card-strong: rgba(255, 255, 255, 0.74);
+  --qb-glass-edge: rgba(255, 255, 255, 0.95);
+  --qb-border: rgba(255, 255, 255, 0.7);
+  --qb-separator: rgba(60, 60, 67, 0.12);
+  --qb-text: #10131a;
+  --qb-sub: rgba(40, 44, 56, 0.8);
+  --qb-muted: rgba(40, 44, 56, 0.62);
+  --qb-faint: rgba(40, 44, 56, 0.4);
+  --qb-fill: rgba(255, 255, 255, 0.55);
+  --qb-input: rgba(255, 255, 255, 0.78);
+  --qb-input-border: rgba(60, 60, 67, 0.14);
+  --qb-header: rgba(255, 255, 255, 0.35);
+  --qb-row-hover: rgba(255, 255, 255, 0.45);
+  --qb-tag: rgba(10, 124, 255, 0.12);
+  --qb-red: #d70015;
+  --qb-orange: #c93400;
+  --qb-green: #1b7f3a;
+  --qb-shadow: 0 1px 1px rgba(16, 19, 26, 0.04), 0 12px 32px rgba(30, 60, 120, 0.12);
+  --qb-scrim: rgba(16, 19, 26, 0.25);
+}
+
+/* ── Dark (only when chosen): charcoal, not black; the same hues, dimmed ── */
+[data-qb-theme="dark"] {
+  --qb-bg: #12151b;
+  --qb-wall-1: rgba(10, 124, 255, 0.34);
+  --qb-wall-2: rgba(245, 183, 10, 0.16);
+  --qb-wall-3: rgba(16, 168, 92, 0.16);
+  --qb-wall-4: rgba(90, 200, 250, 0.16);
+  --qb-card: rgba(40, 44, 54, 0.52);
+  --qb-card-strong: rgba(36, 40, 50, 0.78);
+  --qb-glass-edge: rgba(255, 255, 255, 0.12);
+  --qb-border: rgba(255, 255, 255, 0.1);
+  --qb-separator: rgba(255, 255, 255, 0.1);
+  --qb-text: #f3f5f9;
+  --qb-sub: rgba(232, 236, 245, 0.72);
+  --qb-muted: rgba(232, 236, 245, 0.52);
+  --qb-faint: rgba(232, 236, 245, 0.32);
+  --qb-fill: rgba(255, 255, 255, 0.08);
+  --qb-input: rgba(255, 255, 255, 0.07);
+  --qb-input-border: rgba(255, 255, 255, 0.1);
+  --qb-header: rgba(255, 255, 255, 0.04);
+  --qb-row-hover: rgba(255, 255, 255, 0.06);
+  --qb-tag: rgba(10, 132, 255, 0.2);
+  --qb-red: #ff6961;
+  --qb-orange: #ffb340;
+  --qb-green: #4cd964;
+  --qb-shadow: 0 1px 1px rgba(0, 0, 0, 0.25), 0 14px 40px rgba(0, 0, 0, 0.35);
+  --qb-scrim: rgba(0, 0, 0, 0.5);
+}
+
+/* ── The wallpaper. Fixed, so the glass panels slide over it like iOS. ──── */
+.qb-ios {
+  position: relative;
+  min-height: 100vh;
+  background: var(--qb-bg);
+  color: var(--qb-text);
+  font-family: var(--qb-font);
+  -webkit-font-smoothing: antialiased;
+  font-size: 17px;            /* Apple's body size */
+  letter-spacing: -0.011em;   /* SF Text-like tracking */
+  isolation: isolate;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+.qb-ios::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60vw 55vw at 0% 0%, var(--qb-wall-1), transparent 62%),
+    radial-gradient(48vw 44vw at 100% 4%, var(--qb-wall-2), transparent 64%),
+    radial-gradient(52vw 48vw at 6% 100%, var(--qb-wall-3), transparent 64%),
+    radial-gradient(56vw 50vw at 100% 100%, var(--qb-wall-4), transparent 64%);
+}
+.qb-ios button, .qb-ios input, .qb-ios select, .qb-ios textarea { font-family: inherit; letter-spacing: inherit; }
+
+/* Headlines use the Display cut, tighter as they get bigger, like apple.com. */
+.qb-ios h1, .qb-ios h2, .qb-ios h3, .qb-display, .section-title {
+  font-family: var(--qb-font-display);
+}
+
+/* ── Glass. Any element whose inline style uses a --qb-card token gets the
+      frost (and, unless it sets its own shadow, the lift), so tabs only
+      have to pick the colour. Matches SSR ("background:var(..)") and
+      client ("background: var(..)") serialisations alike. ─────────────────── */
+.qb-glass,
+.qb-ios [style*="var(--qb-card)"],
+.qb-ios [style*="var(--qb-card-strong)"] {
+  -webkit-backdrop-filter: var(--qb-blur);
+  backdrop-filter: var(--qb-blur);
+}
+.qb-ios [style*="var(--qb-card)"]:not([style*="box-shadow"]) {
+  box-shadow: var(--qb-shadow), inset 0 1px 0 var(--qb-glass-edge);
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────── */
+.qb-ios input:focus-visible,
+.qb-ios select:focus-visible,
+.qb-ios textarea:focus-visible {
+  outline: none;
+  border-color: var(--qb-accent) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--qb-accent) 22%, transparent) !important;
+}
+.qb-ios button:focus-visible,
+.qb-ios a:focus-visible {
+  outline: 2px solid var(--qb-accent);
+  outline-offset: 2px;
+}
+.qb-ios ::placeholder { color: var(--qb-faint); }
+.qb-ios select option { background: var(--qb-bg); color: var(--qb-text); }
+.qb-ios button:not(:disabled):active { transform: scale(0.97); }
+.qb-ios button { transition: transform 0.12s ease, background-color 0.2s ease, color 0.2s ease; }
+
+/* Thin, quiet scrollbars like macOS overlay ones. */
+.qb-ios ::-webkit-scrollbar { width: 10px; height: 10px; }
+.qb-ios ::-webkit-scrollbar-track { background: transparent; }
+.qb-ios ::-webkit-scrollbar-thumb {
+  background: var(--qb-fill);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.qb-ios ::-webkit-scrollbar-thumb:hover { background-color: var(--qb-faint); }
+
+/* ── Shell pieces used by the panel pages ──────────────────────────────── */
+.qb-nav-item { color: var(--qb-sub); }
+.qb-nav-item:not([data-active="true"]):hover { background: var(--qb-row-hover); color: var(--qb-text); }
+.qb-nav-item[data-active="true"] { background: var(--qb-accent); color: var(--qb-on-accent); box-shadow: 0 6px 16px color-mix(in srgb, var(--qb-accent) 35%, transparent); }
+.qb-icon-btn {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: var(--qb-fill); color: var(--qb-text); cursor: pointer;
+}
+.qb-icon-btn:hover { background: var(--qb-row-hover); }
+
+@media (prefers-reduced-motion: reduce) {
+  .qb-ios, .qb-ios * { transition: none !important; }
+  .qb-ios button:not(:disabled):active { transform: none; }
+}
+
+/* Browsers without backdrop-filter: make glass nearly opaque so text stays legible. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-qb-theme="light"] { --qb-card: rgba(255, 255, 255, 0.96); --qb-card-strong: #ffffff; }
+  [data-qb-theme="dark"]  { --qb-card: rgba(40, 44, 54, 0.96);  --qb-card-strong: #282c36; }
+}

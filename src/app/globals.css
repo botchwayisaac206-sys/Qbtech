@@ -1,0 +1,123 @@
+/* ============================================================================
+   QBNET TECH — global styles.
+   Colours, glass and type come from the --qb-* tokens in qb-ios.css (imported
+   first by app/layout.tsx). Nothing here should hard-code a colour.
+   ============================================================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 96px;
+  /* clip, not hidden: `hidden` turns <html>/<body> into scroll containers,
+     which silently breaks every position: sticky on the site (the admin
+     sidebar and the navbar). */
+  overflow-x: clip;
+}
+body {
+  overflow-x: clip;
+  min-height: 100vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Prevent iOS Safari zoom on input focus (needs font-size >= 16px). */
+@media (max-width: 768px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+@layer components {
+  /* ── Buttons: iOS pills ─────────────────────────────────────────────── */
+  .btn-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    border-radius: 999px; padding: 0.8rem 1.5rem;
+    background: var(--qb-accent); color: var(--qb-on-accent);
+    font-weight: 600; font-size: 1rem; letter-spacing: -0.01em;
+    transition: transform 0.15s ease, filter 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--qb-accent) 28%, transparent);
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-primary:active { transform: scale(0.97); }
+
+  .btn-outline, .btn-glass {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    border-radius: 999px; padding: 0.8rem 1.5rem;
+    background: var(--qb-card); color: var(--qb-text);
+    border: 1px solid var(--qb-border);
+    -webkit-backdrop-filter: var(--qb-blur); backdrop-filter: var(--qb-blur);
+    font-weight: 600; font-size: 1rem; letter-spacing: -0.01em;
+    transition: transform 0.15s ease, background-color 0.2s ease;
+  }
+  .btn-outline:hover, .btn-glass:hover { background: var(--qb-card-strong); }
+  .btn-outline:active, .btn-glass:active { transform: scale(0.97); }
+
+  .btn-whatsapp {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    border-radius: 999px; padding: 0.8rem 1.5rem;
+    background: #25d366; color: #06301a; font-weight: 600; font-size: 1rem;
+    transition: transform 0.15s ease, filter 0.2s ease;
+  }
+  .btn-whatsapp:hover { filter: brightness(1.05); }
+  .btn-whatsapp:active { transform: scale(0.97); }
+
+  /* ── Surfaces ───────────────────────────────────────────────────────── */
+  .glass, .cyber-card {
+    background: var(--qb-card);
+    border: 1px solid var(--qb-border);
+    border-radius: var(--qb-radius);
+    box-shadow: var(--qb-shadow), inset 0 1px 0 var(--qb-glass-edge);
+    -webkit-backdrop-filter: var(--qb-blur); backdrop-filter: var(--qb-blur);
+  }
+  .glass-strong {
+    background: var(--qb-card-strong);
+    border: 1px solid var(--qb-border);
+    box-shadow: var(--qb-shadow), inset 0 1px 0 var(--qb-glass-edge);
+    -webkit-backdrop-filter: var(--qb-blur); backdrop-filter: var(--qb-blur);
+  }
+
+  /* ── Form fields: iOS grouped inputs ────────────────────────────────── */
+  .cyber-input, .qb-field {
+    width: 100%;
+    background: var(--qb-input); color: var(--qb-text);
+    border: 1px solid var(--qb-input-border); border-radius: 12px;
+    padding: 0.75rem 0.95rem; font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .cyber-input:focus, .qb-field:focus {
+    outline: none; border-color: var(--qb-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--qb-accent) 22%, transparent);
+  }
+  .cyber-input::placeholder, .qb-field::placeholder { color: var(--qb-faint); }
+
+  /* ── Type ───────────────────────────────────────────────────────────── */
+  .section-title {
+    color: var(--qb-text); font-weight: 700; letter-spacing: -0.022em; line-height: 1.07;
+  }
+  .qb-display {
+    color: var(--qb-text); font-weight: 700; letter-spacing: -0.03em; line-height: 1.04;
+  }
+
+  /* Old decorative background, now a no-op so existing markup stays harmless. */
+  .bg-grid { background-image: none; }
+
+  .cyber-spinner {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2.5px solid var(--qb-fill); border-top-color: var(--qb-accent);
+    animation: qb-spin 0.8s linear infinite;
+  }
+}
+
+@keyframes qb-spin { to { transform: rotate(360deg); } }
+@keyframes qb-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
