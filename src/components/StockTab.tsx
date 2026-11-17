@@ -200,9 +200,9 @@ function WarehouseModal({ wh, onSave, onClose, T, dark }: {
   }
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9100, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9100, background: 'var(--qb-scrim)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: T.card, borderRadius: 18, border: `1px solid ${T.border}`, width: '100%', maxWidth: 480, padding: 28, boxShadow: T.shadow }}>
+      <div style={{ background: 'var(--qb-solid)', borderRadius: 18, border: `1px solid ${T.border}`, width: '100%', maxWidth: 480, padding: 28, boxShadow: T.shadow }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <h2 style={{ color: T.text, fontWeight: 900, fontSize: 17, margin: 0 }}>{wh.id ? '✏️ Edit Warehouse' : '🏭 Add New Warehouse'}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.sub, cursor: 'pointer', fontSize: 20 }}>✕</button>
@@ -376,9 +376,9 @@ function StockModal({ item, warehouses, onSave, onClose, T, dark }: {
   }
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9000, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9000, background: 'var(--qb-scrim)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: T.card, borderRadius: 18, border: `1px solid ${T.border}`, width: '100%', maxWidth: 680, maxHeight: '90vh', overflow: 'auto', boxShadow: T.shadow, padding: 28 }}>
+      <div style={{ background: 'var(--qb-solid)', borderRadius: 18, border: `1px solid ${T.border}`, width: '100%', maxWidth: 680, maxHeight: '90vh', overflow: 'auto', boxShadow: T.shadow, padding: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <h2 style={{ color: T.text, fontWeight: 900, fontSize: 18, margin: 0 }}>{item.id ? '✏️ Edit Stock Item' : '➕ Add New Stock Item'}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.sub, cursor: 'pointer', fontSize: 20 }}>✕</button>

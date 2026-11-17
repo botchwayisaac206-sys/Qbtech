@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { GHS, withinWindow } from '@/lib/sales'
 import { fetchExpenses, invalidate, peek, scopedKey, type ExpRow } from '@/lib/adminCache'
+import ListPager, { usePaged } from '@/components/admin/ListPager'
 
 const DEFAULT_ACCENT = '#0a7cff'
 
@@ -86,9 +87,9 @@ export default function Expenses({ canSeeAmounts, userId, windowed = false, acce
   const searched = search.trim()
     ? visibleRows.filter(r => (r.description || '').toLowerCase().includes(search.trim().toLowerCase()))
     : visibleRows
-  const CAP = 150 // avoid rendering thousands of rows — search narrows it down
-  const shownRows = searched.slice(0, CAP)
-  const hiddenCount = searched.length - shownRows.length
+  // Paged, so the list never turns into an endless scroll.
+  const pager = usePaged(searched, search)
+  const shownRows = pager.shown
 
   return (
     <div style={{ maxWidth: 980, display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -200,11 +201,7 @@ export default function Expenses({ canSeeAmounts, userId, windowed = false, acce
             </div>
           </div>
         ))}
-        {hiddenCount > 0 && (
-          <div style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--qb-muted)', fontSize: 12, borderTop: '1px solid var(--qb-separator)' }}>
-            +{hiddenCount} more — search to narrow down.
-          </div>
-        )}
+        <ListPager {...pager} accent={accent} border="var(--qb-separator)" />
       </div>
     </div>
   )

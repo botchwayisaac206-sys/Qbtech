@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GHS } from '@/lib/sales'
 import { fetchDebts, fetchDebtPayments, payDebt, removeDebtPayment, owed, DEBTS_CHANGED, type Debt, type DebtPayment } from '@/lib/debts'
 import type { StockLine } from '@/lib/storeStock'
+import ListPager, { usePaged } from '@/components/admin/ListPager'
 
 /**
  * Debtors — who owes the shop, and what they have paid.
@@ -95,6 +96,9 @@ export default function Debtors({ userId, isSuperBoss, accent = DEFAULT_ACCENT }
       .sort((a, b) => owed(b) - owed(a) || b.issued_at.localeCompare(a.issued_at))
   }, [debts, show, search])
 
+  // Paged, so a long debtors list never turns into an endless scroll.
+  const pager = usePaged(shown, `${show}|${search}`)
+
   const openDebt = (d: Debt) => {
     setOpenId(id => (id === d.id ? null : d.id))
     setAmount(''); setMethod('Cash'); setPaidOn(today()); setNote('')
@@ -178,7 +182,7 @@ export default function Debtors({ userId, isSuperBoss, accent = DEFAULT_ACCENT }
           </div>
         )}
 
-        {state === 'ready' && shown.map((d, n) => {
+        {state === 'ready' && pager.shown.map((d, n) => {
           const left = owed(d), open = openId === d.id, pct = d.total > 0 ? Math.min(100, (d.paid / d.total) * 100) : 0
           const history = paymentsOf.get(d.id) || []
           return (
@@ -252,6 +256,7 @@ export default function Debtors({ userId, isSuperBoss, accent = DEFAULT_ACCENT }
             </div>
           )
         })}
+        {state === 'ready' && <ListPager {...pager} accent="#0a7cff" border="var(--qb-separator)" />}
       </div>
     </div>
   )

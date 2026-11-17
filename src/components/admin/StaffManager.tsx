@@ -252,14 +252,14 @@ export default function StaffManager() {
         <div
           onClick={e => e.target === e.currentTarget && !pwSaving && setPwTarget(null)}
           style={{
-            position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.65)',
-            backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
+            position: 'fixed', inset: 0, zIndex: 1200, background: 'var(--qb-scrim)',
+            backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center',
             justifyContent: 'center', padding: 16,
           }}>
           <form onSubmit={resetPassword} style={{
             width: '100%', maxWidth: 420, padding: 24, borderRadius: 16,
-            background: 'var(--qb-input)', border: '1px solid rgba(10,124,255,0.2)',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+            background: 'var(--qb-solid)', border: '1px solid rgba(10,124,255,0.2)',
+            boxShadow: 'var(--qb-shadow)',
           }}>
             <div style={{ color: TEAL, fontSize: 11, fontWeight: 800, letterSpacing: '0.2em', marginBottom: 6 }}>
               SET A NEW PASSWORD

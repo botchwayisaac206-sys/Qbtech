@@ -10,6 +10,7 @@ import {
   type Levels, type StockLine, type StockRow,
 } from '@/lib/storeStock'
 import CameraScanner from '@/components/admin/CameraScanner'
+import ListPager, { usePaged } from '@/components/admin/ListPager'
 import ModelPicker, { type PickerOption } from '@/components/admin/ModelPicker'
 import { needsApproval, requestStockMovement, settleAfterDelay } from '@/lib/stockApproval'
 
@@ -329,6 +330,8 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
       && (!searchWords.length || (() => { const h = haystack(t); return searchWords.every(w => h.includes(w)) })()))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchPool, byWho, todayOnly, searchWords])
+  // Paged, so the record never turns into an endless scroll.
+  const historyPager = usePaged(shownHistory, `${shownHistory.length}:${shownHistory[0]?.id ?? ''}`)
 
   // ── Lines ────────────────────────────────────────────────
   const setLine = (key: number, patch: Partial<Line>) =>
@@ -1029,7 +1032,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
                 <th style={{ ...th, textAlign: 'right' }}>UNITS</th>
               </tr></thead>
               <tbody>
-                {shownHistory.map(t => {
+                {historyPager.shown.map(t => {
                   const items = t.items || []
                   const units  = items.reduce((s, i) => s + i.quantity, 0)
                   const spoilt = items.filter(i => i.condition === 'spoilt').reduce((s, i) => s + i.quantity, 0)
@@ -1110,6 +1113,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
                 })}
               </tbody>
             </table>
+            <ListPager {...historyPager} accent="#0a7cff" border={T.border} />
           </div>
         )}
       </div>

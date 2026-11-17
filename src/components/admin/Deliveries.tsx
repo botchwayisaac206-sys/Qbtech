@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import ListPager, { usePaged } from '@/components/admin/ListPager'
 import { supabase } from '@/lib/supabase'
 import { GHS, withinWindow } from '@/lib/sales'
 import { DELIVERY_LOGGED } from '@/components/admin/InvoiceDelivery'
@@ -112,9 +113,9 @@ export default function Deliveries({ isBoss, userId, windowed = false, accent = 
   const searched = search.trim()
     ? visibleRows.filter(r => `${r.customer_name || ''} ${r.location || ''} ${r.customer_num || ''} ${r.invoice_number || ''} ${r.note || ''}`.toLowerCase().includes(search.trim().toLowerCase()))
     : visibleRows
-  const CAP = 150 // avoid rendering thousands of rows — search narrows it down
-  const shownRows = searched.slice(0, CAP)
-  const hiddenCount = searched.length - shownRows.length
+  // Paged, so the list never turns into an endless scroll.
+  const pager = usePaged(searched, search)
+  const shownRows = pager.shown
 
   return (
     <div style={{ maxWidth: 980, display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -242,11 +243,7 @@ export default function Deliveries({ isBoss, userId, windowed = false, accent = 
             )}
           </div>
         ))}
-        {hiddenCount > 0 && (
-          <div style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--qb-muted)', fontSize: 12, borderTop: '1px solid var(--qb-separator)' }}>
-            +{hiddenCount} more — search to narrow down.
-          </div>
-        )}
+        <ListPager {...pager} accent={accent} border="var(--qb-separator)" />
       </div>
     </div>
   )

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchStaffNames, fetchAllRows } from '@/lib/adminCache'
+import ListPager, { usePaged } from '@/components/admin/ListPager'
 
 const TEAL = '#0a7cff'
 
@@ -158,9 +159,9 @@ export default function AuditLog({ darkMode = true, dahua = false }: { darkMode?
       .reduce((s, r) => s + (amountOf(r.diff) || 0), 0)
   }, [filtered])
 
-  const CAP = 200 // avoid rendering hundreds of rows — narrow the range/table/action instead
-  const shown = filtered.slice(0, CAP)
-  const hiddenCount = filtered.length - shown.length
+  // Paged, so the log never turns into an endless scroll. Back to page 1 when the filters change.
+  const pager = usePaged(filtered, `${filtered.length}:${filtered[0]?.id ?? ''}`)
+  const shown = pager.shown
 
   const label: React.CSSProperties = { fontSize: 10, fontWeight: 800, color: TEAL, letterSpacing: '0.16em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }
   const field: React.CSSProperties = { padding: '9px 12px', borderRadius: 9, border: `1px solid ${T.border}`, background: T.input, color: T.text, fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' }
@@ -243,11 +244,7 @@ export default function AuditLog({ darkMode = true, dahua = false }: { darkMode?
               </div>
             )
           })}
-        {hiddenCount > 0 && (
-          <div style={{ padding: '12px 16px', textAlign: 'center', color: T.sub, fontSize: 12, borderTop: `1px solid ${T.border}` }}>
-            +{hiddenCount} more — narrow the range, table, or action to see them.
-          </div>
-        )}
+        <ListPager {...pager} accent={TEAL} border={T.border} />
       </div>
     </div>
   )

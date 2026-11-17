@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { GHS } from '@/lib/sales'
+import ListPager, { usePaged } from '@/components/admin/ListPager'
 
 /**
  * Item history — "who bought 2TB drives, how many, and when".
@@ -133,6 +134,8 @@ export default function ItemHistory({ dark, accent }: { dark: boolean; accent?: 
   const [period, setPeriod]   = useState<Period>('all')
   const [grain, setGrain]     = useState<Grain>('month')
   const [sales, setSales]     = useState<Sale[]>([])
+  // Paged, so thousands of sales never turn into an endless scroll.
+  const salesPager = usePaged(sales, sales)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
   /** The term the results on screen belong to, so the summary can't lie. */
@@ -394,7 +397,7 @@ export default function ItemHistory({ dark, accent }: { dark: boolean; accent?: 
                   <th style={th}>INVOICE</th>
                 </tr></thead>
                 <tbody>
-                  {sales.map((s, i) => (
+                  {salesPager.shown.map((s, i) => (
                     <tr key={`${s.invoice_number}-${i}`} style={{ borderBottom: `1px solid ${T.border}` }}>
                       <td style={{ ...td, color: T.sub, whiteSpace: 'nowrap' }}>
                         {new Date(s.issued_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -413,6 +416,7 @@ export default function ItemHistory({ dark, accent }: { dark: boolean; accent?: 
                 </tbody>
               </table>
             </div>
+            <ListPager {...salesPager} accent={A} border={T.border} />
           </div>
         </>
       )}

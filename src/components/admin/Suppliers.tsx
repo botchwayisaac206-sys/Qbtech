@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import { GHS } from '@/lib/sales'
+import ListPager, { usePaged } from '@/components/admin/ListPager'
 import { fetchLineStock, fetchLocations, modelKey, STORE, SPOILT, type StockRow } from '@/lib/storeStock'
 import {
   fetchSupplierBalances, fetchSupplierDocs, fetchProductCosts, saveSupplier, receiveFromSupplier,
@@ -142,6 +143,7 @@ function SupplierList({ balances, docs, canWrite, open, setOpen, notify, reload 
   }
 
   const supplier = balances.find(b => b.id === open)
+  const pager = usePaged(balances, balances.length)
 
   return (
     <>
@@ -169,7 +171,7 @@ function SupplierList({ balances, docs, canWrite, open, setOpen, notify, reload 
               {balances.length === 0 && (
                 <tr><td colSpan={5} style={{ padding: 30, textAlign: 'center', color: 'var(--qb-muted)' }}>No suppliers yet.</td></tr>
               )}
-              {balances.map(b => (
+              {pager.shown.map(b => (
                 <tr key={b.id} onClick={() => setOpen(open === b.id ? null : b.id)}
                   style={{ borderTop: '1px solid var(--qb-separator)', cursor: 'pointer', background: open === b.id ? 'var(--qb-row-hover)' : undefined }}>
                   <td style={{ padding: '11px 14px', color: 'var(--qb-text)', fontWeight: 600 }}>
@@ -191,6 +193,7 @@ function SupplierList({ balances, docs, canWrite, open, setOpen, notify, reload 
             </tbody>
           </table>
         </div>
+        <ListPager {...pager} accent={ACCENT} border="var(--qb-separator)" />
       </div>
 
       {supplier && (
@@ -205,14 +208,15 @@ function Statement({ supplier, docs, canWrite, onClose, notify, reload }: {
   supplier: SupplierBalance; docs: SupplierDoc[]; canWrite: boolean; onClose: () => void
   notify: (t: string, k?: 'ok' | 'err') => void; reload: () => Promise<void>
 }) {
-  // Oldest first, so the running balance reads down the page.
+  // Running balance worked out oldest-first, then shown newest-first so the latest page comes up first.
   const rows = useMemo(() => {
     let run = 0
     return [...docs].reverse().map(d => {
       if (!d.voided_at) run += d.kind === 'received' ? d.amount : -d.amount
       return { d, run }
-    })
+    }).reverse()
   }, [docs])
+  const pager = usePaged(rows, supplier.id)
 
   async function voidDoc(d: SupplierDoc) {
     const reason = window.prompt(`Void ${d.number}? It stays on the statement, struck out.${d.stock_booked ? ' Its stock change is undone.' : ''}\n\nReason:`)
@@ -242,7 +246,7 @@ function Statement({ supplier, docs, canWrite, onClose, notify, reload }: {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ d, run }) => {
+              {pager.shown.map(({ d, run }) => {
                 const struck: React.CSSProperties = d.voided_at ? { textDecoration: 'line-through', opacity: 0.5 } : {}
                 return (
                   <tr key={d.id} style={{ borderTop: '1px solid var(--qb-separator)', verticalAlign: 'top' }}>
@@ -276,6 +280,7 @@ function Statement({ supplier, docs, canWrite, onClose, notify, reload }: {
               })}
             </tbody>
           </table>
+          <ListPager {...pager} accent={ACCENT} border="var(--qb-separator)" />
         </div>
       )}
     </div>
@@ -496,6 +501,7 @@ function CostsView({ costs, stock, canWrite, notify, reload }: {
   const q = search.trim().toLowerCase()
   const shown = rows.out.filter(r => !q || r.model.toLowerCase().includes(q))
   const value = rows.out.reduce((s, r) => s + r.qty * r.unit_cost, 0)
+  const pager = usePaged(shown, search)
 
   async function save(model: string, cost: string) {
     const n = Number(cost)
@@ -547,7 +553,7 @@ function CostsView({ costs, stock, canWrite, notify, reload }: {
             </thead>
             <tbody>
               {shown.length === 0 && <tr><td colSpan={5} style={{ padding: 30, textAlign: 'center', color: 'var(--qb-muted)' }}>No cost prices yet. They are filled in when goods are received.</td></tr>}
-              {shown.slice(0, 300).map(r => (
+              {pager.shown.map(r => (
                 <tr key={r.model_key} style={{ borderTop: '1px solid var(--qb-separator)' }}>
                   <td style={{ padding: '10px 14px', color: 'var(--qb-text)' }}>{r.model}</td>
                   <td style={{ ...tnum, padding: '10px 14px', textAlign: 'right' }}>
@@ -573,6 +579,7 @@ function CostsView({ costs, stock, canWrite, notify, reload }: {
             </tbody>
           </table>
         </div>
+        <ListPager {...pager} accent={ACCENT} border="var(--qb-separator)" />
       </div>
 
       {rows.uncosted.length > 0 && (

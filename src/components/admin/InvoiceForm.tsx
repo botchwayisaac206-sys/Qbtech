@@ -736,8 +736,8 @@ function ScanLinkModal({ code, models, fld, lbl, onClose, onLinked }: {
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { inputRef.current?.focus() }, [])
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: 'var(--qb-input)', border: '1px solid var(--qb-input-border)', borderRadius: 16, padding: 26 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'var(--qb-scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: 'var(--qb-solid)', border: '1px solid var(--qb-input-border)', borderRadius: 16, padding: 26, boxShadow: 'var(--qb-shadow)' }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 900, color: 'var(--qb-text)' }}>New barcode</h3>
         <p style={{ margin: '0 0 16px', color: 'var(--qb-sub)', fontSize: 13 }}>
           <span style={{ fontVariantNumeric: 'tabular-nums', color: TEAL }}>{cleanCode(code)}</span> isn&apos;t linked yet. Which product is it?
