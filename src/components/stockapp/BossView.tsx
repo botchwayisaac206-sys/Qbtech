@@ -3,18 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  ArrowLeftRight, BarChart3, Boxes, ChevronDown, ClipboardList, FileDown, RefreshCw, Search, Tag, TrendingDown, TrendingUp,
+  ArrowLeftRight, BarChart3, Boxes, ChevronDown, ClipboardList, RefreshCw, Search, Tag, TrendingDown, TrendingUp,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { GHS, paymentBuckets } from '@/lib/sales'
 import { fetchAllRows, deliveredInvoiceNumbers, type DelRow } from '@/lib/adminCache'
-import { LINE_LABEL, SPOILT, modelKey, type StockLine } from '@/lib/storeStock'
+import { SPOILT, modelKey, type StockLine } from '@/lib/storeStock'
 import { loadCreditLedger } from '@/lib/debts'
 import {
   approveStockRequest, rejectStockRequest, reverseStockRequest, fetchStockRequests, usePendingCount, settleDue,
   useAutoAccept, STOCK_REQUESTS_CHANGED, type StockRequest,
 } from '@/lib/stockApproval'
-import { downloadDahuaTransfersPdf } from '@/lib/transfersPdf'
 
 /**
  * The boss's side of the phone app: how the shop is doing, at a glance.
@@ -43,10 +42,11 @@ import { downloadDahuaTransfersPdf } from '@/lib/transfersPdf'
 // One palette, used the same way everywhere: ink on paper, one brand colour
 // for what can be tapped or is selected, and red / amber / green only for
 // what they mean.
+// The same palette as the admin panel (qb-ios.css, data-qb-area="admin").
 const C = {
-  bg: '#f5f6f8', card: '#ffffff', ink: '#0f172a', sub: '#64748b', faint: '#94a3b8',
-  line: '#e6e9ed', brand: '#0f766e', brandDark: '#115e59', tint: '#e7f5f2',
-  good: '#15803d', goodTint: '#e8f6ec', bad: '#b91c1c', badTint: '#fdecec', warn: '#b45309', warnTint: '#fef4e2',
+  bg: '#eef1f6', card: '#ffffff', ink: '#0f172a', sub: '#475569', faint: '#94a3b8',
+  line: '#e2e7ef', brand: '#1f5fd6', brandDark: '#0f1b2e', tint: '#e6eefc',
+  good: '#157f3c', goodTint: '#e3f4e8', bad: '#c81e1e', badTint: '#fde8e8', warn: '#b45309', warnTint: '#fdf4dc',
 }
 const NUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' }
 
@@ -96,9 +96,8 @@ interface StockRow { id: string; warehouse: string; qty: number; opening: number
 const priceKey = (model: string) => modelKey(model)
 const chunk = <T,>(list: T[], n: number) => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n))
 const timeOf = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-const tablesOf = (l: StockLine) => l === 'dahua'
-  ? { inv: 'dahua_invoices', items: 'dahua_invoice_items', exp: 'dahua_expenses', del: 'dahua_deliveries' }
-  : { inv: 'invoices', items: 'invoice_items', exp: 'expenses', del: 'deliveries' }
+// The phone app covers the main shop only.
+const tablesOf = (_l: StockLine) => ({ inv: 'invoices', items: 'invoice_items', exp: 'expenses', del: 'deliveries' })
 
 /** A line's deliveries in a date range. */
 const deliveriesIn = (table: string, a: string, b: string) => fetchAllRows<DelRow>((f, e) => supabase.from(table)
@@ -119,7 +118,7 @@ function Segmented<T extends string>({ value, options, onChange, scroll = false 
   value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; scroll?: boolean
 }) {
   return (
-    <div className="tb-noscroll" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 12, background: '#e9ecf0', overflowX: scroll ? 'auto' : 'visible' }}>
+    <div className="tb-noscroll" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 12, background: '#e3e8f0', overflowX: scroll ? 'auto' : 'visible' }}>
       {options.map(o => {
         const on = o.key === value
         return (
@@ -154,11 +153,11 @@ function Pill({ text, color, bg }: { text: string; color: string; bg: string }) 
 const isoDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 /**
- * Stock moves staff have entered, waiting for the Big Boss — main shop and
- * Dahua, the same queue as on the admin panel's Transfers tab. He approves
+ * Stock moves staff have entered, waiting for the Big Boss — the same queue
+ * as on the admin panel's Transfers tab, main shop only. He approves
  * or rejects each here and reverses one already approved. Auto-accept is
  * switched from the admin panel (right-click the Transfers tab). Other bosses see what is waiting. The list keeps a fixed
- * height and scrolls inside. Below it, the Dahua movements as a PDF.
+ * height and scrolls inside.
  */
 function Approvals({ isSuperBoss, tick }: { isSuperBoss: boolean; tick: number }) {
   const [rows, setRows] = useState<StockRequest[]>([])
@@ -166,7 +165,6 @@ function Approvals({ isSuperBoss, tick }: { isSuperBoss: boolean; tick: number }
   const [view, setView] = useState<'pending' | 'approved'>('pending')
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [printing, setPrinting] = useState<'today' | 'all' | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const auto = useAutoAccept()
 
@@ -183,9 +181,11 @@ function Approvals({ isSuperBoss, tick }: { isSuperBoss: boolean; tick: number }
     return () => { window.removeEventListener(STOCK_REQUESTS_CHANGED, again); clearInterval(timer) }
   }, [load])
 
-  const pending = rows.filter(r => r.status === 'pending')
+  // Main shop only: a request touching another line is left to the admin panel.
+  const mainRows = rows.filter(r => r.to_line === 'main' && (!r.from_line || r.from_line === 'main'))
+  const pending = mainRows.filter(r => r.status === 'pending')
   // Reversible: approved in the last week.
-  const approved = rows.filter(r => r.status === 'approved' && Date.now() - new Date(r.decided_at || r.requested_at).getTime() < 7 * 86_400_000)
+  const approved = mainRows.filter(r => r.status === 'approved' && Date.now() - new Date(r.decided_at || r.requested_at).getTime() < 7 * 86_400_000)
   const shown = view === 'pending' ? pending : approved
 
   // Auto-accept, unseen: a quiet tick so a due request is settled on time.
@@ -215,31 +215,19 @@ function Approvals({ isSuperBoss, tick }: { isSuperBoss: boolean; tick: number }
     } catch (e: any) { setMsg({ ok: false, text: `${r.request_number}: ${e.message || 'that did not go through'}` }) }
     finally { setBusy(null) }
   }
-  const pdf = async (which: 'today' | 'all') => {
-    setPrinting(which); setMsg(null)
-    try {
-      const r = await downloadDahuaTransfersPdf(which === 'all' ? 'all' : isoDay())
-      setMsg({ ok: true, text: `PDF downloaded: ${r.movements} movement${r.movements === 1 ? '' : 's'}${r.pending ? `, ${r.pending} waiting` : ''}.` })
-    } catch (e: any) { setMsg({ ok: false, text: e.message || 'Could not make the PDF' }) }
-    finally { setPrinting(null) }
-  }
-
   // Before the approval migration there is nothing to show — not even an error.
   if (state === 'failed') return null
-  const place = (line: string | null, wh: string | null, other: string | null) =>
-    `${wh}${line && other && line !== other ? ` (${LINE_LABEL[line as StockLine]})` : ''}`
   const route = (r: StockRequest) => r.kind === 'move'
-    ? `${place(r.from_line, r.from_warehouse, r.to_line)} → ${place(r.to_line, r.to_warehouse, r.from_line)}`
+    ? `${r.from_warehouse} → ${r.to_warehouse}`
     : `${r.party ? `${r.party} → ` : ''}${r.to_warehouse}`
-  const pdfBtn: React.CSSProperties = { flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', borderRadius: 10, border: `1px solid ${C.line}`, background: C.card, color: C.brand, fontWeight: 600, fontSize: 13 }
 
   return (
     <div style={{ ...card, padding: 0, marginBottom: 12, overflow: 'hidden', borderColor: pending.length ? '#f1dcb5' : C.line }}>
       <div style={{ padding: '14px 14px 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ ...sectionTitle, margin: 0, flex: 1 }}>{isSuperBoss ? 'Waiting for your approval' : 'Waiting for the Big Boss'}</div>
-        {pending.length > 0 && <Pill text={String(pending.length)} color="#1f1300" bg="#f59e0b" />}
+        {pending.length > 0 && <Pill text={String(pending.length)} color="#fff" bg={C.warn} />}
       </div>
-      <div style={{ padding: '0 14px 10px', fontSize: 12, color: C.sub }}>Moves, deliveries and returns staff entered, main shop and Dahua. The stock changes only when approved.</div>
+      <div style={{ padding: '0 14px 10px', fontSize: 12, color: C.sub }}>Moves, deliveries and returns staff entered. The stock changes only when approved.</div>
       <div style={{ padding: '0 14px 10px' }}>
         <Segmented value={view} onChange={setView}
           options={[{ key: 'pending', label: `Waiting · ${pending.length}` }, { key: 'approved', label: `Approved · ${approved.length}` }]} />
@@ -291,10 +279,6 @@ function Approvals({ isSuperBoss, tick }: { isSuperBoss: boolean; tick: number }
           )
         })}
       </div>
-      <div style={{ display: 'flex', gap: 8, padding: 12, borderTop: `1px solid ${C.line}`, background: C.bg }}>
-        <button type="button" disabled={!!printing} onClick={() => pdf('today')} style={pdfBtn}><FileDown size={15} />{printing === 'today' ? 'Making…' : "Today's PDF"}</button>
-        <button type="button" disabled={!!printing} onClick={() => pdf('all')} style={pdfBtn}><FileDown size={15} />{printing === 'all' ? 'Making…' : 'All-time PDF'}</button>
-      </div>
     </div>
   )
 }
@@ -311,7 +295,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
 }) {
   const [tab, setTab] = useState<Tab>('overview')
   const [period, setPeriod] = useState<Period>('today')
-  const [scope, setScope] = useState<Scope>('both')
+  const scope: Scope = 'main'
   const [tick, setTick] = useState(0)
   const waiting = usePendingCount(isSuperBoss)
   const [spinning, setSpinning] = useState(false)
@@ -339,7 +323,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
     const a = r.from.toISOString(), b = r.to.toISOString()
     ;(async () => {
       try {
-        const lines: StockLine[] = scope === 'both' ? ['main', 'dahua'] : [scope]
+        const lines: StockLine[] = [scope]
         const inv: Invoice[] = [], items: SoldItem[] = [], del: (DelRow & { line: StockLine })[] = []
         const cr = { numbers: new Set<string>(), paid: [] as { line: StockLine; amount: number; method: string; at: string }[], owed: 0, debtors: 0 }
         let exp = 0, prev = 0
@@ -384,7 +368,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
       }
     })()
     return () => { cancelled = true }
-  }, [tab, period, scope, tick])
+  }, [tab, period, tick])
 
   // A sale with Delivery switched on is one sale: counted under deliveries,
   // at its invoice's total, and left out of counter sales.
@@ -427,11 +411,8 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
       for (const d of dels) { const n = at.get(new Date(d.delivered_at).toDateString()); if (n !== undefined) days[n].total += Number(d.amount) || 0 }
       for (const x of credit.paid) { const n = at.get(new Date(x.at).toDateString()); if (n !== undefined) days[n].total += x.amount }
     }
-    const main = counterInv.filter(i => i.line === 'main').reduce((s, i) => s + i.total, 0)
-               + dels.filter(d => d.line === 'main').reduce((s, d) => s + (Number(d.amount) || 0), 0)
-               + credit.paid.filter(x => x.line === 'main').reduce((s, x) => s + x.amount, 0)
     return {
-      total, units, counter, delivery, debtPaid, count: counterInv.length, deliveryCount: dels.length, days, main, dahua: total - main,
+      total, units, counter, delivery, debtPaid, count: counterInv.length, deliveryCount: dels.length, days,
       top: Array.from(byItem, ([name, v]) => ({ name, ...v })).sort((a, b) => b.amount - a.amount).slice(0, 8),
       pay: [{ method: 'Cash', amount: paid.cash }, { method: 'Mobile Money', amount: paid.momo }, { method: 'Bank Transfer', amount: paid.bank }, { method: 'Other', amount: paid.other }]
         .filter(x => x.amount > 0).sort((a, b) => b.amount - a.amount),
@@ -451,7 +432,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
     ;(async () => {
       try {
         const all: Movement[] = []
-        for (const t of [{ head: 'stock_transfers', items: 'stock_transfer_items' }, { head: 'dahua_stock_transfers', items: 'dahua_stock_transfer_items' }]) {
+        for (const t of [{ head: 'stock_transfers', items: 'stock_transfer_items' }]) {
           const { data, error } = await supabase.from(t.head)
             .select(`transfer_number,kind,from_warehouse,to_warehouse,supplier,signed_by,staff_id,transferred_at,items:${t.items}(model,quantity)`)
             .gte('transferred_at', from.toISOString()).lt('transferred_at', to.toISOString())
@@ -460,7 +441,6 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
           all.push(...((data as unknown as Movement[]) || []))
         }
         if (cancelled) return
-        // A move between the main shop and Dahua is recorded on both sides under one number.
         const seen = new Set<string>()
         setMoves(all.filter(m => !seen.has(m.transfer_number) && seen.add(m.transfer_number))
           .sort((x, y) => y.transferred_at.localeCompare(x.transferred_at)))
@@ -489,7 +469,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
   }, [moves])
 
   // ── Stock and prices (one list, two ways of looking at it) ──
-  const [stockLine, setStockLine] = useState<StockLine>('main')
+  const stockLine: StockLine = 'main'
   const [products, setProducts] = useState<Product[]>([])
   const [stockState, setStockState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [query, setQuery] = useState('')
@@ -529,19 +509,6 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
           pr.rows.push({ id: r.id, warehouse: r.warehouse, qty, opening: Number(r.opening_stock) || 0 })
           if (qty !== 0) pr.places.push({ warehouse: r.warehouse, qty })
           pr.total += qty
-          byModel.set(r.model, pr)
-        }
-      } else {
-        const stock = await fetchAllRows<{ id: string; warehouse: string; model: string; closing_stock: number; opening_stock: number; unit_price: number }>((f, e) => supabase.from('dahua_stock')
-          .select('id,warehouse,model,closing_stock,opening_stock,unit_price').order('id').range(f, e))
-        for (const r of stock) {
-          if (r.warehouse === SPOILT) continue
-          const pr = byModel.get(r.model) || { line, model: r.model, places: [], rows: [], total: 0, price: 0 }
-          const qty = Number(r.closing_stock) || 0
-          pr.rows.push({ id: r.id, warehouse: r.warehouse, qty, opening: Number(r.opening_stock) || 0 })
-          if (qty !== 0) pr.places.push({ warehouse: r.warehouse, qty })
-          pr.total += qty
-          pr.price = Math.max(pr.price, Number(r.unit_price) || 0)
           byModel.set(r.model, pr)
         }
       }
@@ -584,11 +551,8 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
     const price = Math.max(0, Math.round((parseFloat(draft) || 0) * 100) / 100)
     if (price === p.price) { setEditing(null); return }
     setSaving(true); setPriceMsg(null)
-    // The main shop keeps one price per product, in the price list. Dahua
-    // keeps it on the stock row, so every row of the model is set alike.
-    const { error } = p.line === 'main'
-      ? await supabase.rpc('set_model_price', { p_model: p.model, p_price: price })
-      : await supabase.from('dahua_stock').update({ unit_price: price, updated_at: new Date().toISOString() }).eq('model', p.model)
+    // The main shop keeps one price per product, in the price list.
+    const { error } = await supabase.rpc('set_model_price', { p_model: p.model, p_price: price })
     setSaving(false)
     if (error) { setPriceMsg({ ok: false, text: error.message || 'Could not save that price' }); return }
     setProducts(list => list.map(x => (x.model === p.model ? { ...x, price } : x)))
@@ -615,7 +579,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
     if (raw === '' || !Number.isInteger(next) || next < 0) { setCountMsg({ ok: false, text: 'Type the count as a whole number, 0 or more.' }); return }
     if (next === row.qty) { setCountEdit(null); return }
     setCountSaving(true); setCountMsg(null)
-    const { data, error } = await supabase.from(p.line === 'dahua' ? 'dahua_stock' : 'warehouse_stock')
+    const { data, error } = await supabase.from('warehouse_stock')
       .update({ opening_stock: row.opening + (next - row.qty), updated_at: new Date().toISOString() })
       .eq('id', row.id).eq('closing_stock', row.qty).eq('opening_stock', row.opening)
       .select('closing_stock,opening_stock')
@@ -674,10 +638,6 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
   // While searching, the list keeps at least a screen's height under the box,
   // so it can always be slid up to the top, however few products match.
   const roomWhileSearching: React.CSSProperties = searching || query ?{ minHeight: 'calc(100dvh - 160px)' } : {}
-  const lineSwitch = (
-    <Segmented value={stockLine} onChange={l => { setStockLine(l); setWarehouse('ALL'); setEditing(null); setOpenProduct(null); setPriceMsg(null); setCountEdit(null); setCountMsg(null) }}
-      options={[{ key: 'main', label: 'Main shop' }, { key: 'dahua', label: 'Dahua' }]} />
-  )
 
   const delta = before !== null && before > 0 ? ((sales.total - before) / before) * 100 : null
   const net = sales.total - spent
@@ -705,7 +665,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
 
       {/* ── App bar ── */}
       {/* Fixed, not sticky: the site sets overflow-x on the page, and sticky does not hold under that. */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, background: 'rgba(245,246,248,0.92)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', borderBottom: `1px solid ${C.line}`, padding: 'calc(12px + env(safe-area-inset-top)) 16px 12px' }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, background: 'rgba(238,241,246,0.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', borderBottom: `1px solid ${C.line}`, padding: 'calc(12px + env(safe-area-inset-top)) 16px 12px' }}>
         <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11.5, fontWeight: 600, color: C.sub }}>QBNET TECH · {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
@@ -723,9 +683,6 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
         {tab === 'overview' && (
           <>
             <Segmented value={period} onChange={setPeriod} options={PERIODS} />
-            <div style={{ marginTop: 8 }}>
-              <Segmented value={scope} onChange={setScope} options={[{ key: 'both', label: 'All' }, { key: 'main', label: 'Main shop' }, { key: 'dahua', label: 'Dahua' }]} />
-            </div>
             {windowNote}
             {salesState === 'loading' ? loading : salesState === 'failed' ? failed('sales') : (
               <>
@@ -756,20 +713,6 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
                   <Kpi title="Expenses" value={GHS(spent)} tone={spent > 0 ? C.warn : C.ink} />
                   <Kpi title="Sales less expenses" value={GHS(net)} tone={net < 0 ? C.bad : C.good} />
                 </div>
-
-                {scope === 'both' && sales.total > 0 && (
-                  <div style={{ ...card, marginTop: 10 }}>
-                    <div style={sectionTitle}>Where it came from</div>
-                    <div style={{ display: 'flex', height: 10, borderRadius: 999, overflow: 'hidden', background: C.line }}>
-                      <div style={{ width: `${(sales.main / sales.total) * 100}%`, background: C.brand }} />
-                      <div style={{ flex: 1, background: '#f59e0b' }} />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 10, fontSize: 13 }}>
-                      <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: C.brand, marginRight: 6 }} />Main shop <strong style={NUM}>{GHS(sales.main)}</strong></span>
-                      <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#f59e0b', marginRight: 6 }} />Dahua <strong style={NUM}>{GHS(sales.dahua)}</strong></span>
-                    </div>
-                  </div>
-                )}
 
                 {sales.days.length > 0 && sales.total > 0 && (
                   <div style={{ ...card, marginTop: 10 }}>
@@ -839,7 +782,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
                             {credit.numbers.has(i.invoice_number) && <Pill text="On credit" color={C.bad} bg={C.badTint} />}
                           </span>
                           <span style={{ display: 'block', fontSize: 12, color: C.sub, marginTop: 1 }}>
-                            {timeOf(i.issued_at)}{i.payment_method ? ` · ${i.payment_method}` : ''}{scope === 'both' ? ` · ${LINE_LABEL[i.line]}` : ''}
+                            {timeOf(i.issued_at)}{i.payment_method ? ` · ${i.payment_method}` : ''}
                           </span>
                         </span>
                         <strong style={{ ...NUM, fontSize: 14, whiteSpace: 'nowrap' }}>{GHS(i.total)}</strong>
@@ -873,7 +816,6 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
         {/* ── Stock ── */}
         {tab === 'stock' && (
           <>
-            {lineSwitch}
             {stockState === 'loading' ? loading : stockState === 'failed' ? failed('stock') : (
               <>
                 {warehouses.length > 1 && (
@@ -974,7 +916,6 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
         {/* ── Prices ── */}
         {tab === 'prices' && (
           <>
-            {lineSwitch}
             {unpriced > 0 && stockState === 'ready' && !query && (
               <button type="button" onClick={() => setUnpricedOnly(v => !v)}
                 style={{ width: '100%', marginTop: 10, padding: '11px 14px', borderRadius: 12, fontSize: 13.5, fontWeight: 600, textAlign: 'left',
@@ -1120,7 +1061,7 @@ export default function BossView({ isSuperBoss, windowed, onMoves, onSignOut }: 
                   <Icon size={20} strokeWidth={on ? 2.4 : 2} />
                   {key === 'activity' && waiting > 0 && (
                     <span aria-label={`${waiting} waiting for approval`}
-                      style={{ ...NUM, position: 'absolute', top: -4, right: 4, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#f59e0b', color: '#1f1300', fontSize: 11, fontWeight: 800, display: 'grid', placeItems: 'center', border: '2px solid #fff', lineHeight: 1 }}>
+                      style={{ ...NUM, position: 'absolute', top: -4, right: 4, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: C.warn, color: '#fff', fontSize: 11, fontWeight: 800, display: 'grid', placeItems: 'center', border: '2px solid #fff', lineHeight: 1 }}>
                       {waiting}
                     </span>
                   )}

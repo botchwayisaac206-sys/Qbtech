@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/adminCache'
 import { cleanCode, loadCodeMap } from '@/lib/productCodes'
 import {
-  fetchLevels, transferStock, receiveStock, returnStock, crossTransferStock, fetchLocations, fetchLineStock,
-  tablesFor, otherLine, modelKey, similarNames, LINE_LABEL, STORE, SPOILT,
+  fetchLevels, transferStock, receiveStock, returnStock, fetchLineStock,
+  tablesFor, modelKey, similarNames, STORE, SPOILT,
   type Levels, type StockLine, type StockRow,
 } from '@/lib/storeStock'
 import CameraScanner from '@/components/admin/CameraScanner'
@@ -38,20 +38,9 @@ import { needsApproval, requestStockMovement, settleAfterDelay } from '@/lib/sto
  * Who did it is the staff ID of whoever is signed in, recorded by the
  * database rather than typed, so it cannot be another hand.
  *
- * The Dahua portal mounts this with `dahua`: the same three movements, run
- * against dahua_stock through the dahua_* functions and recorded in their
- * own DH-TRF / DH-RCV / DH-RNA series (20260930_dahua_transfers.sql). Dahua
- * has no STORE STOCK — its invoices deduct from whichever row is picked —
- * so there a transfer is simply units changing warehouse.
- *
- * Either portal can also move stock across to the other line: the location
- * lists carry the other side's warehouses under their own heading. That is
- * one `cross_transfer_stock` call, recorded on both sides under one XTR
- * number (20261005_cross_line_transfers.sql). The two sides do not always
- * call a product the same thing, so a cross line says what it arrives as.
  */
 
-const TEAL = '#0a7cff'
+const TEAL = '#1f5fd6'
 const AMBER = '#f59e0b'
 
 interface Theme {
@@ -73,7 +62,7 @@ interface Line {
   quantity: number
   /** Returns only: a spoilt line is logged but never restocked. */
   spoilt?: boolean
-  /** Cross-line moves only: the name it takes on the other side, once staff have chosen one. */
+  /** Moves only: the name it joins at the destination, once staff have chosen one. */
   toModel?: string
   /** A delivery of a product the shop has never stocked: typed, not picked. */
   isNew?: boolean
@@ -100,34 +89,25 @@ interface TransferRow {
   signed_by: string | null
   staff_id: string | null
   transferred_at: string
-  /** Both set on a move between the main shop and Dahua, both null otherwise. */
+  /** Set on old moves to or from a second stock pool that no longer exists. */
   from_line?: StockLine | null
   to_line?: StockLine | null
   /** Aliased in the select, since the two lines name their item tables differently. */
   items: { model: string; quantity: number; position: number; condition: string; other_model?: string | null }[]
 }
 
-/** Select values: a location is a line and a name, and both lines have a SPOILT. */
-const locKey = (line: StockLine, name: string) => `${line}|${name}`
-const parseLoc = (key: string) => {
-  const i = key.indexOf('|')
-  return { line: key.slice(0, i) as StockLine, name: key.slice(i + 1) }
-}
-
-/** The columns a movement-history read asks for, on either line's tables. */
+/** The columns a movement-history read asks for. */
 const historyCols = (itemsTable: string, lines: string, otherModel: string) =>
   `id,transfer_number,kind,from_warehouse,to_warehouse,${lines}supplier,note,signed_by,staff_id,transferred_at,items:${itemsTable}(model,quantity,position,condition${otherModel})`
 
-export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false, dahua = false, accent }: {
+export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false, accent }: {
   dark: boolean
   canWrite: boolean
-  /** Run against the Dahua stock pool and movement record instead of the main shop's. */
-  dahua?: boolean
   /** The tab's accent colour; defaults to the main panel's green. */
   accent?: string
   /**
-   * The Big Boss's movements apply at once; everyone else's — main shop and
-   * Dahua — go to him for approval first (20261023_stock_approval_everywhere.sql).
+   * The Big Boss's movements apply at once; everyone else's go to him for
+   * approval first (20261023_stock_approval_everywhere.sql).
    */
   isSuperBoss?: boolean
   /**
@@ -141,10 +121,8 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
 }) {
   const T = dark ? DARK : LIGHT
   const A = accent ?? TEAL
-  // White on the muted Dahua accents is too faint; they take dark text, as the portal's own buttons do.
-  const onA = dahua ? '#060d1a' : '#ffffff'
-  const line: StockLine = dahua ? 'dahua' : 'main'
-  const other = otherLine(line)
+  const onA = '#ffffff'
+  const line: StockLine = 'main'
   const tables = tablesFor(line)
 
   // Move stock between locations, book in a delivery, or take goods back.
@@ -154,15 +132,11 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
   const [supplier, setSupplier] = useState('')
 
   const [warehouses, setWarehouses] = useState<string[]>([])
-  // The other line's locations, offered on a move only. Empty until they load,
-  // and left empty if they cannot be read — this tab then works as it always has.
-  const [otherWarehouses, setOtherWarehouses] = useState<string[]>([])
-  // Which line each end is on. Both are this tab's own line except on a cross move.
-  const [fromLine, setFromLine] = useState<StockLine>(line)
-  const [toLine, setToLine] = useState<StockLine>(line)
+  // Both ends are always on the one stock pool.
+  const fromLine: StockLine = line
+  const toLine: StockLine = line
   const [from, setFrom] = useState('')
-  // Dahua has no STORE STOCK; its default is picked once the locations load.
-  const [to, setTo] = useState(dahua ? '' : STORE)
+  const [to, setTo] = useState(STORE)
   const [note, setNote] = useState('')
   const [lines, setLines] = useState<Line[]>([newLine()])
   const [saving, setSaving] = useState(false)
@@ -173,12 +147,11 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
   const [sourceLevels, setSourceLevels] = useState<Levels>(new Map())
   const [levelsLoading, setLevelsLoading] = useState(false)
 
-  // Barcodes and names are kept per line; a scan resolves against the line
-  // the stock is leaving.
-  const [codeMaps, setCodeMaps] = useState<Record<StockLine, Map<string, string>>>({ main: new Map(), dahua: new Map() })
-  // What every location on each line calls each product. This is what lets a
+  // Barcodes, resolved against the shop's code directory.
+  const [codeMaps, setCodeMaps] = useState<Record<StockLine, Map<string, string>>>({ main: new Map() })
+  // What every location calls each product. This is what lets a
   // delivery be booked under the name the shop already uses somewhere else.
-  const [lineStock, setLineStock] = useState<Record<StockLine, StockRow[]>>({ main: [], dahua: [] })
+  const [lineStock, setLineStock] = useState<Record<StockLine, StockRow[]>>({ main: [] })
   const [camera, setCamera] = useState(false)
   const [scanFlash, setScanFlash] = useState<{ ok: boolean; text: string } | null>(null)
   const lastScanRef = useRef<{ code: string; t: number }>({ code: '', t: 0 })
@@ -203,26 +176,21 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
   // ── Locations ────────────────────────────────────────────
   useEffect(() => {
     ;(async () => {
-      const { data } = await supabase.from(dahua ? 'dahua_warehouses' : 'warehouses').select('name').order('created_at')
+      const { data } = await supabase.from('warehouses').select('name').order('created_at')
       const names = (data || []).map(w => w.name as string)
       setWarehouses(names)
       // Default to moving stock the way it usually moves: out of the first
-      // back warehouse and onto the shop floor (on Dahua, into the next one).
+      // back warehouse and onto the shop floor.
       const firstFrom = names.find(n => n !== STORE && n !== SPOILT) || ''
       setFrom(f => f || firstFrom)
       setTo(t => (names.includes(t) && t !== SPOILT ? t : names.find(n => n !== SPOILT && n !== firstFrom) || ''))
     })()
-    fetchLocations(otherLine(dahua ? 'dahua' : 'main')).then(setOtherWarehouses).catch(() => { /* cross-line moves stay off */ })
-    for (const l of ['main', 'dahua'] as const) {
-      loadCodeMap(l === 'dahua' ? 'dahua_product_codes' : 'product_codes')
-        .then(m => setCodeMaps(c => ({ ...c, [l]: m }))).catch(() => { /* scanning stays off */ })
-    }
-  }, [dahua])
+    loadCodeMap('product_codes')
+      .then(m => setCodeMaps({ main: m })).catch(() => { /* scanning stays off */ })
+  }, [])
 
   const loadLineStock = useCallback(() => {
-    for (const l of ['main', 'dahua'] as const) {
-      fetchLineStock(l).then(rows => setLineStock(s => ({ ...s, [l]: rows }))).catch(() => { /* suggestions stay off */ })
-    }
+    fetchLineStock(line).then(rows => setLineStock({ main: rows })).catch(() => { /* suggestions stay off */ })
   }, [])
   useEffect(() => { loadLineStock() }, [loadLineStock])
 
@@ -232,10 +200,8 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
   // what that location already stocks and top it up rather than inventing a
   // second spelling for something already on the shelf.
   const refWarehouse = mode === 'move' ? from : to
-  const refLine      = mode === 'move' ? fromLine : line
+  const refLine      = line
   const codeMap      = codeMaps[refLine]
-  /** Leaving one line for the other, rather than changing warehouse within one. */
-  const cross = mode === 'move' && fromLine !== toLine
 
   useEffect(() => {
     if (!refWarehouse) { setSourceLevels(new Map()); return }
@@ -382,7 +348,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
       }
       return { exact, byKey }
     }
-    return { main: build(lineStock.main), dahua: build(lineStock.dahua) }
+    return { main: build(lineStock.main) }
   }, [lineStock])
 
   /**
@@ -455,7 +421,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
     return [
       ...Array.from(here.keys()).sort(byName).map(model => ({ model, qty: here.get(model), group: `In ${to}` })),
       ...Array.from(names[toLine].exact).filter(m => !here.has(m)).sort(byName)
-        .map(model => ({ model, group: `Elsewhere in ${LINE_LABEL[toLine]}` })),
+        .map(model => ({ model, group: 'Elsewhere in the shop' })),
     ]
   }, [mode, lineStock, names, toLine, to])
 
@@ -485,7 +451,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
       mode === 'return' ? 'Pick where the good items go back to' : 'Pick where the stock is going', false)
     if (mode === 'move') {
       if (!from)            return showToast('Pick where the stock is coming from', false)
-      if (from === to && fromLine === toLine) return showToast('A transfer needs two different locations', false)
+      if (from === to) return showToast('A transfer needs two different locations', false)
     }
     if (!validLines.length) return showToast('Add at least one item', false)
     if (unknown.length) {
@@ -545,13 +511,6 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
         said = gone > 0
           ? `${back} back into ${to}, ${gone} spoilt to ${SPOILT}`
           : `${back} unit${back === 1 ? '' : 's'} back into ${to}`
-      } else if (cross) {
-        t = await crossTransferStock(
-          { line: fromLine, name: from }, { line: toLine, name: to },
-          validLines.map(l => ({ model: l.model.trim(), quantity: l.quantity, to_model: arrivesAs(l) })),
-          note,
-        )
-        said = `${units} unit${units === 1 ? '' : 's'} moved to ${to} (${LINE_LABEL[toLine]})`
       } else {
         // The name it joins at the destination goes with it when that is
         // not the name it left under.
@@ -602,10 +561,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
   // is not offered as anywhere to send stock. It stays available as a
   // source, which is how a repaired unit or a disposal leaves the pile.
   const sendable      = warehouses.filter(w => w !== SPOILT)
-  const destinations  = sendable.filter(w => !(fromLine === line && w === from))
-  const otherSendable = otherWarehouses.filter(w => w !== SPOILT && !(fromLine === other && w === from))
-  /** A location on the other line carries its line's name wherever it is shown alone. */
-  const placed = (l: StockLine, name: string) => (l === line ? name : `${name} (${LINE_LABEL[l]})`)
+  const destinations  = sendable.filter(w => w !== from)
 
   return (
     <div style={{ maxWidth: 980 }}>
@@ -625,13 +581,9 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
             {MODES.map(m => (
               <button key={m.key} type="button" onClick={() => {
                 setMode(m.key)
-                // A delivery or a return is booked into this tab's own line,
-                // and can land anywhere sellable there — so the destination
-                // must not be left blank, or left on the other side.
-                if (m.key !== 'move') {
-                  setFromLine(line)
-                  if (toLine !== line || !to) { setToLine(line); setTo(warehouses.find(w => w !== SPOILT) || '') }
-                }
+                // A delivery or a return can land anywhere sellable, so the
+                // destination must not be left blank.
+                if (m.key !== 'move' && !to) setTo(warehouses.find(w => w !== SPOILT) || '')
               }}
                 role="tab" aria-selected={mode === m.key}
                 style={{
@@ -651,10 +603,6 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
               ? <>A supplier delivery. Nothing is taken from anywhere — these units enter the system, and a model that has never been stocked here is created.</>
               : mode === 'return'
               ? <>Goods back from a buyer. Tick <strong style={{ color: '#ef4444' }}>spoilt</strong> on anything that cannot be sold again: it goes to {SPOILT} instead of back on the shelf, where it can be counted against what you have written off. Everything else returns to stock.</>
-              : cross
-              ? <>Units leave {placed(fromLine, from)} and arrive in {placed(toLine, to)} in a single step, recorded on both sides under one XTR reference. Check what each item <strong style={{ color: T.text }}>arrives as</strong>: the two sides do not always use the same name.</>
-              : dahua
-              ? <>Units leave one Dahua warehouse and arrive at the other in a single step. Dahua invoices deduct from whichever stock row the cashier picks.</>
               : <>Units leave one location and arrive at the other in a single step. Invoices are deducted from {STORE}.</>}
             {!isSuperBoss && (
               <div style={{ marginTop: 6, color: AMBER, fontWeight: 700 }}>
@@ -667,27 +615,12 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
             {mode === 'move' ? (
               <div>
                 <label style={lbl}>From</label>
-                <select style={fld} value={locKey(fromLine, from)} onChange={e => {
-                  const next = parseLoc(e.target.value)
-                  setFromLine(next.line)
-                  setFrom(next.name)
-                  // What was typed against the old source means nothing here.
-                  if (next.line !== fromLine) setLines(ls => ls.map(l => ({ ...l, toModel: undefined })))
-                  if (next.name === to && next.line === toLine) {
-                    setToLine(line)
-                    setTo(sendable.find(w => !(next.line === line && w === next.name)) || '')
-                  }
+                <select style={fld} value={from} onChange={e => {
+                  const next = e.target.value
+                  setFrom(next)
+                  if (next === to) setTo(sendable.find(w => w !== next) || '')
                 }}>
-                  {otherWarehouses.length === 0
-                    ? warehouses.map(w => <option key={w} value={locKey(line, w)}>{w}</option>)
-                    : <>
-                        <optgroup label={LINE_LABEL[line]}>
-                          {warehouses.map(w => <option key={w} value={locKey(line, w)}>{w}</option>)}
-                        </optgroup>
-                        <optgroup label={LINE_LABEL[other]}>
-                          {otherWarehouses.map(w => <option key={w} value={locKey(other, w)}>{w}</option>)}
-                        </optgroup>
-                      </>}
+                  {warehouses.map(w => <option key={w} value={w}>{w}</option>)}
                 </select>
               </div>
             ) : (
@@ -699,22 +632,8 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
             )}
             <div>
               <label style={lbl}>{mode === 'move' ? 'To' : mode === 'return' ? 'Good items back into' : 'Into'}</label>
-              <select style={fld} value={locKey(toLine, to)} onChange={e => {
-                const next = parseLoc(e.target.value)
-                if (next.line !== toLine) setLines(ls => ls.map(l => ({ ...l, toModel: undefined })))
-                setToLine(next.line)
-                setTo(next.name)
-              }}>
-                {mode !== 'move' || otherSendable.length === 0
-                  ? (mode === 'move' ? destinations : sendable).map(w => <option key={w} value={locKey(line, w)}>{w}</option>)
-                  : <>
-                      <optgroup label={LINE_LABEL[line]}>
-                        {destinations.map(w => <option key={w} value={locKey(line, w)}>{w}</option>)}
-                      </optgroup>
-                      <optgroup label={LINE_LABEL[other]}>
-                        {otherSendable.map(w => <option key={w} value={locKey(other, w)}>{w}</option>)}
-                      </optgroup>
-                    </>}
+              <select style={fld} value={to} onChange={e => setTo(e.target.value)}>
+                {(mode === 'move' ? destinations : sendable).map(w => <option key={w} value={w}>{w}</option>)}
               </select>
             </div>
             <div>
@@ -773,7 +692,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
               const brandNew = mode !== 'move' && !!model && !levelsLoading && !known.exact.has(model) && !twin
               // On a move, a line whose exact name the destination does not
               // stock is shown what it will join, or be created as.
-              const showArrival = mode === 'move' && !!model && (cross || (!levelsLoading && !destHere.exact.has(model)))
+              const showArrival = mode === 'move' && !!model && !levelsLoading && !destHere.exact.has(model)
               const arrival  = showArrival ? arrivesAs(l) : ''
               const joins    = !!arrival && destHere.exact.has(arrival)
               const lookalikes = showArrival && !joins ? similarNames(arrival, destHere.exact).slice(0, 3) : []
@@ -816,7 +735,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
                     )}
                     {/* The matching row at the other end, so staff see the two
                         piles are the same product before they send. */}
-                    {mode === 'move' && model && !cross && destHere.exact.has(model) && (
+                    {mode === 'move' && model && destHere.exact.has(model) && (
                       <div style={{ fontSize: 11, marginTop: 2, color: A }}>
                         ✓ Matches “{model}” in {to} · has {(destHere.qty.get(model) ?? 0).toLocaleString()}
                       </div>
@@ -841,15 +760,15 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
                     {showArrival && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: T.sub, marginBottom: 3 }}>
-                          {cross ? `ARRIVES IN ${LINE_LABEL[toLine].toUpperCase()} AS` : `GOES INTO ${to.toUpperCase()} AS`}
+                          {`GOES INTO ${to.toUpperCase()} AS`}
                         </div>
                         <ModelPicker
                           value={l.toModel ?? suggestArrival(l.model)}
                           options={arrivalOptions}
                           onChange={m => setLine(l.key, { toModel: m })}
                           inputStyle={{ ...fld, fontSize: 13, padding: '7px 10px' }}
-                          placeholder={`What ${cross ? LINE_LABEL[toLine] : to} calls it`}
-                          emptyHint={`${cross ? LINE_LABEL[toLine] : to} stocks nothing under that name — it will be created`}
+                          placeholder={`What ${to} calls it`}
+                          emptyHint={`${to} stocks nothing under that name — it will be created`}
                           theme={{
                             menuBg: T.card, border: T.inputBorder, text: T.text,
                             sub: T.sub, accent: A, accentText: onA,
@@ -873,10 +792,8 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
                           </div>
                         )}
                         {arrival && !joins && lookalikes.length === 0 && (
-                          <div style={{ fontSize: 11, marginTop: 4, color: cross && !names[toLine].exact.has(arrival) ? AMBER : T.sub }}>
-                            {cross && !names[toLine].exact.has(arrival)
-                              ? `${LINE_LABEL[toLine]} stocks nothing as “${arrival}” — a new row will be created there.`
-                              : `New to ${to} — a row will be created for it.`}
+                          <div style={{ fontSize: 11, marginTop: 4, color: T.sub }}>
+                            New to {to} — a row will be created for it.
                           </div>
                         )}
                       </div>
@@ -928,7 +845,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
                   ? 'Send for approval'
                   : (mode === 'receive' ? `Receive into ${to || '…'}`
                     : mode === 'return' ? 'Record return'
-                    : `Transfer to ${to ? placed(toLine, to) : '…'}`)}
+                    : `Transfer to ${to || '…'}`)}
             </button>
             {validLines.length > 0 && (() => {
               const units  = validLines.reduce((s, l) => s + l.quantity, 0)
@@ -1057,9 +974,7 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
                                 {i.quantity} × {i.model}
                                 {i.other_model && (
                                   <span style={{ marginLeft: 8, fontSize: 11 }}>
-                                    {t.from_line && t.to_line
-                                      ? `(${LINE_LABEL[t.from_line === line ? t.to_line : t.from_line]} calls it ${i.other_model})`
-                                      : `(joined “${i.other_model}” in ${t.to_warehouse})`}
+                                    {`(joined “${i.other_model}” in ${t.to_warehouse})`}
                                   </span>
                                 )}
                                 {i.condition === 'spoilt' && (
@@ -1089,11 +1004,11 @@ export default function Transfers({ dark, canWrite, isBoss, isSuperBoss = false,
                           <span style={{ marginRight: 6, padding: '1px 6px', borderRadius: 4, border: '1px solid #ef444488', color: '#ef4444', fontSize: 10, fontWeight: 900, letterSpacing: '0.1em' }}>REVERSAL</span>
                         )}
                         <span style={{ color: t.kind === 'move' || t.kind === 'reversal' ? T.sub : A }}>
-                          {t.kind === 'move' || t.kind === 'reversal' ? placed(t.from_line ?? line, t.from_warehouse || '')
+                          {t.kind === 'move' || t.kind === 'reversal' ? (t.from_warehouse || '')
                             : t.supplier || (t.kind === 'return' ? 'Returned' : 'Outside')}
                         </span>
                         <span style={{ color: T.muted, margin: '0 6px' }}>→</span>
-                        <span style={{ color: t.to_warehouse === STORE ? AMBER : T.text, fontWeight: 700 }}>{placed(t.to_line ?? line, t.to_warehouse)}</span>
+                        <span style={{ color: t.to_warehouse === STORE ? AMBER : T.text, fontWeight: 700 }}>{t.to_warehouse}</span>
                       </td>
                       {/* Who did it: the person first, then the login it was
                           entered under — on a stock phone those are different. */}

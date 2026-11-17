@@ -7,14 +7,9 @@ import { fetchAllRows } from '@/lib/adminCache'
 // product_codes: material-code → model lookup (see migration
 // 20260707_product_codes.sql). Powers barcode scanning in both the
 // Stock and Price List tabs. Populated "learn as you scan".
-//
-// The Dahua line keeps its own directory in dahua_product_codes
-// (20260913_dahua_expenses_deliveries_codes.sql), whose models are
-// dahua_stock models. Every helper takes the table, defaulting to the
-// main one so existing callers are unchanged.
 // ─────────────────────────────────────────────────────────────
 
-export type CodeTable = 'product_codes' | 'dahua_product_codes'
+export type CodeTable = 'product_codes'
 
 export interface ProductCode {
   id: string

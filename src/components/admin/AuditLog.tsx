@@ -10,8 +10,7 @@ const TEAL = '#0a7cff'
 // ─────────────────────────────────────────────────────────────
 // AuditLog — read-only view of public.audit_log (see migration
 // 20260417_sales_system.sql). Every insert/update/delete on invoices,
-// expenses, deliveries, warehouse_stock, and product_codes — and their
-// dahua_* counterparts (20260913_dahua_expenses_deliveries_codes.sql) — lands here via
+// expenses, deliveries, warehouse_stock, product_codes and stock_transfers lands here via
 // the shared fn_audit() trigger, so a revenue number that moves without a
 // matching action here means the trigger coverage has a gap, not that the
 // change didn't happen.
@@ -35,21 +34,17 @@ const RANGE_MS: Record<RangeKey, number | null> = {
 
 const TABLES = [
   'invoices', 'expenses', 'deliveries', 'warehouse_stock', 'product_codes', 'stock_transfers',
-  'dahua_invoices', 'dahua_expenses', 'dahua_deliveries', 'dahua_stock', 'dahua_product_codes',
-  'dahua_stock_transfers', 'dahua_price_override',
+  'invoice_price_override',
 ] as const
 type Table = typeof TABLES[number]
 const TABLE_LABEL: Record<string, string> = {
   invoices: 'Invoices', expenses: 'Expenses', deliveries: 'Deliveries',
   warehouse_stock: 'Stock', product_codes: 'Codes', stock_transfers: 'Transfers',
-  dahua_invoices: 'Dahua Invoices', dahua_expenses: 'Dahua Expenses', dahua_deliveries: 'Dahua Deliveries',
-  dahua_stock: 'Dahua Stock', dahua_product_codes: 'Dahua Codes',
-  dahua_stock_transfers: 'Dahua Transfers', dahua_price_override: 'Dahua Price Overrides',
+  invoice_price_override: 'Price overrides',
 }
-const isDahuaTable = (t: string) => t.startsWith('dahua_')
 
 // Sales-tracked tables — a delete here removes money from the dashboard totals.
-const REVENUE_TABLES = new Set(['invoices', 'deliveries', 'dahua_invoices', 'dahua_deliveries'])
+const REVENUE_TABLES = new Set(['invoices', 'deliveries'])
 
 function amountOf(diff: Record<string, any> | null): number | null {
   if (!diff) return null
@@ -61,23 +56,17 @@ function amountOf(diff: Record<string, any> | null): number | null {
 function summaryOf(row: AuditRow): string {
   const d = row.diff || {}
   switch (row.table_name) {
-    case 'invoices':
-    case 'dahua_invoices':   return `${d.invoice_number || row.row_id} · ${d.customer_name || '—'}`
-    case 'expenses':
-    case 'dahua_expenses':   return d.description || '—'
-    case 'deliveries':
-    case 'dahua_deliveries': return `${d.customer_name || 'Delivery'}${d.location ? ' · ' + d.location : ''}`
-    case 'warehouse_stock':
-    case 'dahua_stock':      return `${d.model || '—'} · ${d.warehouse || ''}`
-    case 'product_codes':
-    case 'dahua_product_codes': return `${d.material_code || '—'} → ${d.model || '—'}`
+    case 'invoices':         return `${d.invoice_number || row.row_id} · ${d.customer_name || '—'}`
+    case 'expenses':         return d.description || '—'
+    case 'deliveries':       return `${d.customer_name || 'Delivery'}${d.location ? ' · ' + d.location : ''}`
+    case 'warehouse_stock':  return `${d.model || '—'} · ${d.warehouse || ''}`
+    case 'product_codes':    return `${d.material_code || '—'} → ${d.model || '—'}`
     case 'stock_transfers':
-    case 'dahua_stock_transfers':
       return `${d.transfer_number || row.row_id} · ${d.from_warehouse || d.supplier || (d.kind === 'return' ? 'Returned' : 'Outside')} → ${d.to_warehouse || '—'}`
-    // Written by trg_dahua_log_price_override — a line sold at other than the
+    // Written by trg_invoice_log_price_override — a line sold at other than the
     // product's fixed price. The figures are the ones stored on the line, not
     // today's price, so a later repricing does not rewrite history.
-    case 'dahua_price_override':
+    case 'invoice_price_override':
       return `${d.model || '—'} · ${Number(d.list_price).toFixed(2)} → ${Number(d.unit_price).toFixed(2)}`
              + ` (${Number(d.total_effect) > 0 ? '+' : ''}${Number(d.total_effect).toFixed(2)})`
              + ` · ${d.invoice_number || ''}`
@@ -87,12 +76,8 @@ function summaryOf(row: AuditRow): string {
 
 const GHS = (n: number) => 'GH₵ ' + n.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/**
- * `dahua` narrows the log to the Dahua line's tables, for the Dahua portal.
- * The main panel keeps the full log, both lines included.
- */
-export default function AuditLog({ darkMode = true, dahua = false }: { darkMode?: boolean; dahua?: boolean }) {
-  const tables = dahua ? TABLES.filter(isDahuaTable) : TABLES
+export default function AuditLog({ darkMode = true }: { darkMode?: boolean }) {
+  const tables = TABLES
   // Colours come from the --qb-* tokens (src/app/qb-ios.css).
   const T = {
     pageBg: 'var(--qb-bg)',
@@ -125,7 +110,6 @@ export default function AuditLog({ darkMode = true, dahua = false }: { darkMode?
           fetchAllRows<AuditRow>((from, to) => {
             let q = supabase.from('audit_log').select('*').order('id', { ascending: true }).range(from, to)
             if (cutoff) q = q.gte('created_at', cutoff)
-            if (dahua) q = q.like('table_name', 'dahua\\_%')
             return q
           }),
           fetchStaffNames(),
@@ -140,7 +124,7 @@ export default function AuditLog({ darkMode = true, dahua = false }: { darkMode?
       }
     })()
     return () => { cancelled = true }
-  }, [range, dahua])
+  }, [range])
 
   const filtered = useMemo(() => {
     const ms = RANGE_MS[range]
@@ -172,9 +156,7 @@ export default function AuditLog({ darkMode = true, dahua = false }: { darkMode?
   return (
     <div style={{ color: T.text }}>
       <h2 style={{ fontSize: 17, fontWeight: 900, letterSpacing: '0.04em', margin: '0 0 12px' }}>
-        Activity Log <span style={{ color: T.sub, fontWeight: 500, fontSize: 12, marginLeft: 8 }}>{dahua
-          ? 'every insert/update/delete on Dahua invoices, stock, expenses, deliveries, codes and transfers, and every price override'
-          : 'every insert/update/delete on money-moving tables, and every Dahua price override'}</span>
+        Activity Log <span style={{ color: T.sub, fontWeight: 500, fontSize: 12, marginLeft: 8 }}>{'every insert/update/delete on money-moving tables, and every price override'}</span>
       </h2>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14, background: T.cardBg, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14 }}>

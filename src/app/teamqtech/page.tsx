@@ -105,7 +105,7 @@ export default function AdminPage() {
       .then(({ data }) => { if (!cancelled) setStaffName(((data as { full_name: string | null } | null)?.full_name || '').trim()) })
     return () => { cancelled = true }
   }, [userId])
-  // Dahua moves waiting for the Big Boss — shown on the Transfers tab.
+  // Stock requests waiting for the Big Boss — shown on the Transfers tab.
   const pendingApprovals = usePendingCount(isSuperBoss)
   // Right-click the Transfers tab: the auto-accept switch.
   const autoMenu = useAutoAcceptMenu(isSuperBoss, darkMode)

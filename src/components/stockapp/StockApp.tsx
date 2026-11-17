@@ -7,7 +7,7 @@ import { cleanCode, loadCodeMap } from '@/lib/productCodes'
 import {
   fetchLevels, fetchLocations, fetchLineStock, fetchStockHandlers, addStockHandler, removeStockHandler,
   signInHandler, setHandlerPassword, resetHandlerPassword,
-  modelKey, similarNames, LINE_LABEL, SPOILT, STORE,
+  modelKey, similarNames, SPOILT, STORE,
   type Levels, type Location, type StockLine, type StockRow,
 } from '@/lib/storeStock'
 import { loadOutbox, saveOutbox, newRequestId, isOffline, send, type Pending } from '@/lib/stockOutbox'
@@ -20,7 +20,7 @@ import BossView from '@/components/stockapp/BossView'
  * Stock moves, on a phone — /s-quxf5u4k84, installable to the home screen.
  *
  * The same three movements as the Transfers tab (move, receive, return),
- * across both lines, and nothing else: no history, no prices, no stock
+ * and nothing else: no history, no prices, no stock
  * editing. It exists so a movement is recorded where and when it happens —
  * standing at the shelf, by scanning the box — instead of from memory at a
  * desk afterwards, which is where most of a count's drift comes from.
@@ -56,18 +56,21 @@ import BossView from '@/components/stockapp/BossView'
  *   from the last time it was accepted — never the password itself.
  */
 
-// Light theme. Each colour is dark enough to read as text on white and to
-// carry white text as a button.
-// The same palette as the boss's side of the app (BossView).
-const TEAL = '#0f766e'
+// Light theme, the same palette as the admin panel and the boss's side of the
+// app (BossView). Each colour is dark enough to read as text on white and to
+// carry white text as a button. (TEAL is the action blue; the name is kept.)
+const TEAL = '#1f5fd6'
 const AMBER = '#b45309'
-const RED = '#b91c1c'
-const BG = '#f5f6f8'
+const RED = '#c81e1e'
+const BG = '#eef1f6'
 const CARD = '#ffffff'
 const INPUT = '#ffffff'
 const TEXT = '#0f172a'
-const SUB = '#64748b'
-const LINE = '#d9dee4'
+const SUB = '#475569'
+const LINE = '#d6dde8'
+
+/** The phone app covers the main shop only. */
+const LINES: readonly StockLine[] = ['main']
 
 /** Who is logged in on this phone by name, and the key their password earned it. */
 const HANDLER_KEY = 'teamstock:handler'
@@ -112,7 +115,7 @@ interface Item {
   model: string
   quantity: number
   spoilt?: boolean
-  /** Cross-line moves: the name on the other side, once staff have chosen one. */
+  /** The name it joins at the destination, once staff have chosen one. */
   toModel?: string
 }
 let keyCounter = 0
@@ -165,8 +168,7 @@ const fld: React.CSSProperties = {
   fontSize: 16, border: `1px solid ${LINE}`, background: INPUT, color: TEXT,
 }
 const lbl: React.CSSProperties = {
-  fontSize: 10.5, fontWeight: 800, color: TEAL, letterSpacing: '0.16em',
-  textTransform: 'uppercase', display: 'block', marginBottom: 5,
+  fontSize: 13, fontWeight: 700, color: SUB, display: 'block', marginBottom: 6,
 }
 const pickerTheme = { menuBg: '#ffffff', border: LINE, text: TEXT, sub: SUB, accent: TEAL, accentText: '#fff' }
 
@@ -212,7 +214,7 @@ export default function StockApp() {
 
   const [online, setOnline] = useState(true)
   const [mode, setMode] = useState<Mode>('move')
-  const [locations, setLocations] = useState<Record<StockLine, string[]>>({ main: [], dahua: [] })
+  const [locations, setLocations] = useState<Record<StockLine, string[]>>({ main: [] })
   const [from, setFrom] = useState<Location | null>(null)
   const [to, setTo] = useState<Location | null>(null)
   const [party, setParty] = useState('')
@@ -226,8 +228,8 @@ export default function StockApp() {
   const [levels, setLevels] = useState<Levels>(new Map())
   const [levelsStale, setLevelsStale] = useState(false)
   const [levelsLoading, setLevelsLoading] = useState(false)
-  const [lineStock, setLineStock] = useState<Record<StockLine, StockRow[]>>({ main: [], dahua: [] })
-  const [codeMaps, setCodeMaps] = useState<Record<StockLine, Map<string, string>>>({ main: new Map(), dahua: new Map() })
+  const [lineStock, setLineStock] = useState<Record<StockLine, StockRow[]>>({ main: [] })
+  const [codeMaps, setCodeMaps] = useState<Record<StockLine, Map<string, string>>>({ main: new Map() })
 
   const [camera, setCamera] = useState(false)
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null)
@@ -357,7 +359,7 @@ export default function StockApp() {
   useEffect(() => { const list = loadOutbox(); outboxRef.current = list; setOutbox(list) }, [])
 
   const reloadStock = useCallback(() => {
-    for (const l of ['main', 'dahua'] as const) {
+    for (const l of LINES) {
       remember(`stock:${l}`, () => fetchLineStock(l))
         .then(r => setLineStock(s => ({ ...s, [l]: r.value }))).catch(() => { /* suggestions stay off */ })
     }
@@ -438,8 +440,8 @@ export default function StockApp() {
   useEffect(() => {
     if (!authed) return
     ;(async () => {
-      const got: Record<StockLine, string[]> = { main: [], dahua: [] }
-      for (const l of ['main', 'dahua'] as const) {
+      const got: Record<StockLine, string[]> = { main: [] }
+      for (const l of LINES) {
         try { got[l] = (await remember(`locations:${l}`, () => fetchLocations(l))).value } catch { /* that line stays empty */ }
       }
       setLocations(got)
@@ -449,8 +451,8 @@ export default function StockApp() {
       const firstTo = got.main.includes(STORE) ? STORE : got.main.find(n => n !== SPOILT && n !== firstFrom)
       setTo(t => t ?? (firstTo ? { line: 'main', name: firstTo } : null))
     })()
-    for (const l of ['main', 'dahua'] as const) {
-      remember(`codes:${l}`, async () => Array.from(await loadCodeMap(l === 'dahua' ? 'dahua_product_codes' : 'product_codes')))
+    for (const l of LINES) {
+      remember(`codes:${l}`, async () => Array.from(await loadCodeMap('product_codes')))
         .then(r => setCodeMaps(c => ({ ...c, [l]: new Map(r.value) }))).catch(() => { /* scanning stays off */ })
     }
     reloadStock()
@@ -460,7 +462,6 @@ export default function StockApp() {
   // return, the destination's — what it already stocks, and under what name.
   const ref = mode === 'move' ? from : to
   const refKey = locKey(ref)
-  const cross = mode === 'move' && !!from && !!to && from.line !== to.line
 
   const loadLevels = useCallback(async (loc: Location) => {
     const r = await remember(`levels:${locKey(loc)}`, async () => Array.from(await fetchLevels(loc.name, loc.line)))
@@ -489,7 +490,7 @@ export default function StockApp() {
       }
       return { exact, byKey }
     }
-    return { main: build(lineStock.main), dahua: build(lineStock.dahua) }
+    return { main: build(lineStock.main) }
   }, [lineStock])
 
   const options = useMemo<PickerOption[]>(() => {
@@ -530,7 +531,7 @@ export default function StockApp() {
     return { exact, byKey, qty }
   }, [lineStock, to])
 
-  /** The destination warehouse's own spelling first, then its line's, then the name it left under. */
+  /** The destination warehouse's own spelling first, then the shop's, then the name it left under. */
   const suggestArrival = useCallback((model: string) => {
     if (!to) return model
     const m = model.trim()
@@ -547,7 +548,7 @@ export default function StockApp() {
     return [
       ...Array.from(destHere.exact).sort(byName).map(model => ({ model, group: `In ${to.name}` })),
       ...Array.from(names[to.line].exact).filter(m => !destHere.exact.has(m)).sort(byName)
-        .map(model => ({ model, group: `Elsewhere in ${LINE_LABEL[to.line]}` })),
+        .map(model => ({ model, group: 'Elsewhere in the shop' })),
     ]
   }, [mode, to, names, destHere])
 
@@ -611,8 +612,7 @@ export default function StockApp() {
     )) return
 
     const spoilt = items.filter(i => i.spoilt).reduce((s, i) => s + i.quantity, 0)
-    const dest = cross ? `${to.name} (${LINE_LABEL[to.line]})` : to.name
-    const summary = mode === 'move' ? `${units} unit${units === 1 ? '' : 's'} · ${from!.name} → ${dest}`
+    const summary = mode === 'move' ? `${units} unit${units === 1 ? '' : 's'} · ${from!.name} → ${to.name}`
       : mode === 'receive' ? `${units} unit${units === 1 ? '' : 's'} received into ${to.name}`
       : `${units - spoilt} back into ${to.name}${spoilt ? `, ${spoilt} spoilt` : ''}`
 
@@ -626,7 +626,7 @@ export default function StockApp() {
         model: i.model,
         quantity: i.quantity,
         // The name it joins at the destination, when that is not the name it left under.
-        ...(mode === 'move' && (cross || arrivesAs(i) !== i.model) ? { to_model: arrivesAs(i) } : {}),
+        ...(mode === 'move' && arrivesAs(i) !== i.model ? { to_model: arrivesAs(i) } : {}),
         ...(mode === 'return' ? { condition: i.spoilt ? 'spoilt' as const : 'good' as const } : {}),
       })),
       party: mode === 'move' ? undefined : party.trim() || undefined,
@@ -941,14 +941,8 @@ export default function StockApp() {
   const locationSelect = (value: Location | null, onPick: (l: Location) => void, skip: (l: Location) => boolean) => (
     <select style={fld} value={locKey(value)} onChange={e => onPick(parseLoc(e.target.value))}>
       {!value && <option value="">Choose…</option>}
-      {(['main', 'dahua'] as const).map(l => {
-        const list = locations[l].filter(name => !skip({ line: l, name }))
-        return list.length > 0 && (
-          <optgroup key={l} label={LINE_LABEL[l]}>
-            {list.map(name => <option key={name} value={`${l}|${name}`}>{name}</option>)}
-          </optgroup>
-        )
-      })}
+      {LINES.flatMap(l => locations[l].filter(name => !skip({ line: l, name }))
+        .map(name => <option key={`${l}|${name}`} value={`${l}|${name}`}>{name}</option>))}
     </select>
   )
   // Deliveries and returns never land in SPOILT by hand, and stay on one line.
@@ -964,8 +958,12 @@ export default function StockApp() {
       {/* Fixed, not sticky: the site sets overflow-x on the page, and sticky does not hold under that. */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, background: BG, borderBottom: `1px solid ${LINE}`, padding: 'calc(10px + env(safe-area-inset-top)) 14px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 900, fontSize: 17, whiteSpace: 'nowrap' }}>Stock moves</div>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: online ? TEAL : AMBER }}>{online ? '● Online' : '● No signal'}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: SUB, whiteSpace: 'nowrap' }}>QBNET TECH</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 800, fontSize: 18, whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+            Stock moves
+            <span title={online ? 'Online' : 'No signal'} style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+              color: online ? '#157f3c' : AMBER, background: online ? '#e3f4e8' : '#fdf4dc' }}>{online ? 'Online' : 'No signal'}</span>
+          </div>
         </div>
         {handler && (
           <button type="button" title="Not you? Tap to log out"
@@ -1036,7 +1034,7 @@ export default function StockApp() {
         {banner && (
           <div onClick={() => setBanner(null)} style={{
             borderRadius: 12, padding: '12px 14px', marginBottom: 14, fontWeight: 800,
-            background: banner.tone === 'ok' ? TEAL : banner.tone === 'wait' ? AMBER : RED,
+            background: banner.tone === 'ok' ? '#157f3c' : banner.tone === 'wait' ? AMBER : RED,
             color: '#fff',
           }}>
             <div style={{ fontSize: 15 }}>{banner.title}</div>
@@ -1092,12 +1090,6 @@ export default function StockApp() {
                 }, l => noSpoilt(l) || (mode === 'move' && locKey(l) === locKey(from)))}
               </div>
             </div>
-            {cross && (
-              <div style={{ fontSize: 12, color: AMBER, margin: '-4px 0 12px', fontWeight: 700 }}>
-                This crosses from {LINE_LABEL[from!.line]} to {LINE_LABEL[to!.line]}. Check what each item arrives as.
-              </div>
-            )}
-
             {/* ── What ── */}
             {/* Tapping the field lists everything the location holds, and
                 brings the field to the top of the screen so the list is not
@@ -1189,7 +1181,7 @@ export default function StockApp() {
                 const tooFew = mode === 'move' && (have ?? 0) < i.quantity
                 // A line whose exact name the destination does not stock is
                 // shown what it will join, or be created as.
-                const showArrival = mode === 'move' && !!to && (cross || !destHere.exact.has(i.model))
+                const showArrival = mode === 'move' && !!to && !destHere.exact.has(i.model)
                 const arrival = showArrival ? arrivesAs(i) : ''
                 const joins = !!arrival && destHere.exact.has(arrival)
                 const lookalikes = showArrival && !joins ? similarNames(arrival, destHere.exact).slice(0, 3) : []
@@ -1242,15 +1234,15 @@ export default function StockApp() {
                     </div>
                     {showArrival && (
                       <div style={{ marginTop: 10 }}>
-                        <label style={{ ...lbl, color: SUB }}>{cross ? `Arrives in ${LINE_LABEL[to!.line]} as` : `Goes into ${to!.name} as`}</label>
+                        <label style={{ ...lbl, color: SUB }}>{`Goes into ${to!.name} as`}</label>
                         <ModelPicker
                           value={i.toModel ?? suggestArrival(i.model)}
                           options={arrivalOptions}
                           onChange={m => setItem(i.key, { toModel: m })}
                           inputStyle={{ ...fld, fontSize: 16, padding: '10px 12px' }}
                           theme={pickerTheme}
-                          placeholder={`What ${cross ? LINE_LABEL[to!.line] : to!.name} calls it`}
-                          emptyHint={`${cross ? LINE_LABEL[to!.line] : to!.name} stocks nothing under that name — it will be created`}
+                          placeholder={`What ${to!.name} calls it`}
+                          emptyHint={`${to!.name} stocks nothing under that name — it will be created`}
                         />
                         {joins && arrival !== i.model && (
                           <div style={{ fontSize: 12.5, marginTop: 6, color: TEAL, fontWeight: 700 }}>
@@ -1271,10 +1263,8 @@ export default function StockApp() {
                           </div>
                         )}
                         {arrival && !joins && lookalikes.length === 0 && (
-                          <div style={{ fontSize: 12, marginTop: 4, color: cross && !names[to!.line].exact.has(arrival) ? AMBER : SUB }}>
-                            {cross && !names[to!.line].exact.has(arrival)
-                              ? `New name on the ${LINE_LABEL[to!.line]} side — a row will be created there.`
-                              : `New to ${to!.name} — a row will be created for it.`}
+                          <div style={{ fontSize: 12, marginTop: 4, color: SUB }}>
+                            New to {to!.name} — a row will be created for it.
                           </div>
                         )}
                       </div>

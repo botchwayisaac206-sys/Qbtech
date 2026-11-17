@@ -39,9 +39,9 @@ export const viewport: Viewport = {
 export default function StockAppLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* The site's body is dark; without this the page shows a dark band when it is over-scrolled. */}
+      {/* The page colour; without this the page shows a dark band when it is over-scrolled. */}
       <style>{`
-        body { background: #f5f6f8 !important; }
+        body { background: #eef1f6 !important; }
         /* The site wraps every page in a slide-in animation that leaves a
            transform on <main>. A transformed parent stops "fixed" meaning
            fixed to the screen: the tab bar and the save bar were pinned to

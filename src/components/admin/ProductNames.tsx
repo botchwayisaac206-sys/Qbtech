@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchLineStock, mergeStockModel, modelKey, otherLine, LINE_LABEL, type StockLine, type StockRow } from '@/lib/storeStock'
+import { fetchLineStock, mergeStockModel, modelKey, type StockLine, type StockRow } from '@/lib/storeStock'
 import ModelPicker from '@/components/admin/ModelPicker'
 
 /**
@@ -87,10 +87,8 @@ function findGroups(infos: Map<string, NameInfo>): Group[] {
   return groups
 }
 
-export default function ProductNames({ dark, defaultLine = 'main', accent }: {
+export default function ProductNames({ dark, accent }: {
   dark: boolean
-  /** Which line's names to show first. Both are always available. */
-  defaultLine?: StockLine
   accent?: string
 }) {
   const A = accent ?? TEAL
@@ -98,8 +96,8 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
   const T = { card: 'var(--qb-card)', border: 'var(--qb-border)', text: 'var(--qb-text)', sub: 'var(--qb-sub)', input: 'var(--qb-input)', inputBorder: 'var(--qb-input-border)' }
 
   const [open, setOpen] = useState(false)
-  const [line, setLine] = useState<StockLine>(defaultLine)
-  const [stock, setStock] = useState<Record<StockLine, StockRow[]>>({ main: [], dahua: [] })
+  const line: StockLine = 'main'
+  const [stock, setStock] = useState<Record<StockLine, StockRow[]>>({ main: [] })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
@@ -111,8 +109,7 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [main, dahua] = await Promise.all([fetchLineStock('main'), fetchLineStock('dahua')])
-      setStock({ main, dahua })
+      setStock({ main: await fetchLineStock('main') })
     } catch {
       setMsg({ text: 'Could not read the stock lists', ok: false })
     }
@@ -125,23 +122,6 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
   const sure = groups.filter(g => g.kind === 'same')
   const maybe = groups.filter(g => g.kind === 'maybe')
 
-  /** Products both lines stock, spelled differently on each. */
-  const acrossLines = useMemo(() => {
-    const theirs = new Map<string, string>()
-    const theirExact = new Set<string>()
-    for (const r of stock[otherLine(line)]) {
-      theirExact.add(r.model)
-      const k = modelKey(r.model)
-      if (k && !theirs.has(k)) theirs.set(k, r.model)
-    }
-    const out: { mine: NameInfo; theirs: string }[] = []
-    for (const info of Array.from(infos.values())) {
-      const match = theirs.get(modelKey(info.model))
-      if (match && match !== info.model && !theirExact.has(info.model)) out.push({ mine: info, theirs: match })
-    }
-    return out.sort((a, b) => a.mine.model.localeCompare(b.mine.model))
-  }, [stock, line, infos])
-
   const where = (n: NameInfo) => n.places.map(p => `${p.warehouse} ${p.qty.toLocaleString()}`).join(' · ')
 
   const merge = async (pairs: { from: string; into: string }[]) => {
@@ -152,7 +132,7 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
       return `• “${p.from}”${n ? ` (${where(n)})` : ''}\n   becomes “${p.into}”`
     }).join('\n')
     if (!confirm(
-      `Merge on ${LINE_LABEL[line]}?\n\n${detail}\n\n` +
+      `Merge these names?\n\n${detail}\n\n` +
       `In every warehouse the quantities are added together and the old name disappears. ` +
       `Barcodes follow. Past invoices and movement records keep the name they were written with.\n\n` +
       `This cannot be undone from the app.`,
@@ -172,7 +152,7 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
     load()
   }
 
-  const total = sure.length + maybe.length + acrossLines.length
+  const total = sure.length + maybe.length
   const fld: React.CSSProperties = {
     width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 14, outline: 'none',
     border: `1px solid ${T.inputBorder}`, background: T.input, color: T.text,
@@ -231,7 +211,7 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
         <div style={{ fontWeight: 900, fontSize: 15, color: T.text }}>Product names</div>
         {!loading && (
           <span style={{ fontSize: 12, fontWeight: 700, color: total ? AMBER : T.sub }}>
-            {total ? `${total} to check on ${LINE_LABEL[line]}` : `No doubled names found on ${LINE_LABEL[line]}`}
+            {total ? `${total} to check` : 'No doubled names found'}
           </span>
         )}
         <button type="button" onClick={() => setOpen(o => !o)} style={{ ...btn(false), marginLeft: 'auto' }}>
@@ -244,19 +224,6 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
           <div style={{ fontSize: 12, color: T.sub, margin: '8px 0 12px' }}>
             One product under two names is counted as two products. Pick the name to keep, then merge the other into it:
             quantities are added together in every warehouse and barcodes follow. Nothing here is merged until you confirm it.
-          </div>
-
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {(['main', 'dahua'] as const).map(l => (
-              <button key={l} type="button" onClick={() => { setLine(l); setManualFrom(''); setManualInto('') }}
-                style={{
-                  padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 800,
-                  border: `1px solid ${line === l ? `${A}59` : T.inputBorder}`,
-                  background: line === l ? `${A}26` : 'transparent', color: line === l ? A : T.sub,
-                }}>
-                {LINE_LABEL[l]}
-              </button>
-            ))}
           </div>
 
           {msg && (
@@ -286,28 +253,6 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
                 </>
               )}
 
-              {acrossLines.length > 0 && (
-                <>
-                  <div style={head}>SPELLED DIFFERENTLY ON {LINE_LABEL[otherLine(line)].toUpperCase()} · {acrossLines.length}</div>
-                  <div style={{ fontSize: 11.5, color: T.sub }}>
-                    Both sides stock these. Moves between them already match the two up; renaming makes both lists read the same.
-                  </div>
-                  {acrossLines.map(p => (
-                    <div key={p.mine.model} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', borderRadius: 10, border: `1px solid ${T.border}`, marginTop: 8 }}>
-                      <span style={{ flex: '1 1 260px', minWidth: 0, fontSize: 12.5, color: T.sub }}>
-                        <span style={{ fontVariantNumeric: 'tabular-nums', color: T.text, wordBreak: 'break-word' }}>{p.mine.model}</span>
-                        <span style={{ display: 'block', fontSize: 11 }}>
-                          {LINE_LABEL[otherLine(line)]} calls it <span style={{ fontVariantNumeric: 'tabular-nums', color: T.text }}>{p.theirs}</span>
-                        </span>
-                      </span>
-                      <button type="button" disabled={busy} style={btn(false)}
-                        onClick={() => merge([{ from: p.mine.model, into: p.theirs }])}>
-                        Use {LINE_LABEL[otherLine(line)]}’s spelling here
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
 
               <div style={head}>ANY TWO NAMES</div>
               <div style={{ fontSize: 11.5, color: T.sub, marginBottom: 8 }}>
@@ -317,7 +262,7 @@ export default function ProductNames({ dark, defaultLine = 'main', accent }: {
                 <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                   <ModelPicker value={manualFrom} options={nameOptions} onChange={setManualFrom}
                     inputStyle={fld} placeholder="The name to get rid of" theme={pickerTheme}
-                    emptyHint={`${LINE_LABEL[line]} stocks nothing under that name`} />
+                    emptyHint="Nothing is stocked under that name" />
                 </div>
                 <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                   <ModelPicker value={manualInto} options={nameOptions} onChange={setManualInto}

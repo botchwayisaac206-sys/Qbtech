@@ -28,15 +28,14 @@ export const SPOILT = 'SPOILT'
 export type Levels = Map<string, number>
 
 /**
- * Which business line a movement belongs to. Dahua keeps its own stock pool
- * and its own movement record (20260930_dahua_transfers.sql), with the same
- * three functions under a `dahua_` prefix and no STORE STOCK of its own.
+ * Which stock pool a movement belongs to. There is one: the shop's. The
+ * database still has a `line` column on movements and requests from when a
+ * second pool existed; the app only ever writes and shows 'main'.
  */
-export type StockLine = 'main' | 'dahua'
+export type StockLine = 'main'
 
 const TABLES: Record<StockLine, { stock: string; transfers: string; items: string; rpc: (fn: string) => string }> = {
-  main:  { stock: 'warehouse_stock', transfers: 'stock_transfers',       items: 'stock_transfer_items',       rpc: fn => fn },
-  dahua: { stock: 'dahua_stock',     transfers: 'dahua_stock_transfers', items: 'dahua_stock_transfer_items', rpc: fn => `dahua_${fn}` },
+  main:  { stock: 'warehouse_stock', transfers: 'stock_transfers', items: 'stock_transfer_items', rpc: fn => fn },
 }
 
 /** Where a line's stock and movement history live — for the tables the UI reads directly. */
@@ -45,19 +44,16 @@ export const tablesFor = (line: StockLine) => TABLES[line]
 /** Options every movement takes: when it happened, and which line it is on. */
 export interface MoveOptions { when?: string; line?: StockLine }
 
-/** The other pool — what a cross-line move is measured against. */
-export const otherLine = (line: StockLine): StockLine => (line === 'main' ? 'dahua' : 'main')
+/** How the pool is named to staff. */
+export const LINE_LABEL: Record<StockLine, string> = { main: 'Main shop' }
 
-/** How a line is named to staff when both appear in one list. */
-export const LINE_LABEL: Record<StockLine, string> = { main: 'Main shop', dahua: 'Dahua' }
-
-/** A stock location, on either line. The name alone is not unique: both lines have a SPOILT. */
+/** A stock location. */
 export interface Location { line: StockLine; name: string }
 
 /** Every location on a line, in the order its Stock tab lists them. */
 export async function fetchLocations(line: StockLine): Promise<string[]> {
   const { data, error } = await supabase
-    .from(line === 'dahua' ? 'dahua_warehouses' : 'warehouses')
+    .from('warehouses')
     .select('name').order('created_at')
   if (error) throw error
   return (data || []).map(w => w.name as string)
@@ -140,8 +136,7 @@ export async function fetchLevels(warehouse: string = STORE, line: StockLine = '
       .order('model', { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) throw error
-    // Summed: dahua_stock has no unique (warehouse, model) key, so a model
-    // can sit on more than one row in the same place.
+    // Summed, in case a model sits on more than one row in the same place.
     for (const r of data || []) levels.set(r.model, (levels.get(r.model) || 0) + (Number(r.closing_stock) || 0))
     if (!data || data.length < PAGE) break
   }
@@ -165,15 +160,14 @@ export interface TransferResult {
   signed_by: string | null
   staff_id: string | null
   transferred_at: string
-  /** Set on a move between the main shop and Dahua, null on everything else. */
   from_line?: StockLine | null
   to_line?: StockLine | null
   /** True when the phone app re-sent a movement the database already had. */
   duplicate?: boolean
   /**
-   * A Dahua movement by staff: filed as a request for the Big Boss, not yet
-   * made (20261017_dahua_movement_approval.sql). transfer_number then holds
-   * the request's number.
+   * A movement by staff: filed as a request for the Big Boss, not yet made
+   * (20261023_stock_approval_everywhere.sql). transfer_number then holds the
+   * request's number.
    */
   pending?: boolean
   request_number?: string
@@ -181,37 +175,10 @@ export interface TransferResult {
 
 /**
  * A line on a move, with the name it takes at the destination when that
- * differs — the other line's name for it on a cross move, or a similar name
- * the destination already stocks that staff chose to add it to.
+ * differs — a similar name the destination already stocks that staff chose
+ * to add it to.
  */
 export interface CrossLine extends MoveLine { to_model?: string }
-
-/**
- * Move units between the main shop and Dahua.
- *
- * The two are separate pools with separate records, so this is one
- * transaction that books out of one and into the other, recorded on both
- * sides under one XTR number (20261005_cross_line_transfers.sql).
- */
-export async function crossTransferStock(
-  from: Location,
-  to: Location,
-  items: CrossLine[],
-  note?: string,
-  when?: string,
-): Promise<TransferResult> {
-  const { data, error } = await supabase.rpc('cross_transfer_stock', {
-    p_from_line: from.line,
-    p_from: from.name,
-    p_to_line: to.line,
-    p_to: to.name,
-    p_items: items,
-    p_note: note ?? null,
-    p_when: when ?? new Date().toISOString(),
-  })
-  if (error) throw error
-  return (Array.isArray(data) ? data[0] : data) as TransferResult
-}
 
 /** Everything the phone app needs to send a movement, and to send it again. */
 export interface MovementRequest {

@@ -5,12 +5,10 @@ import {
   approveStockRequest, rejectStockRequest, reverseStockRequest, fetchStockRequests, settleDue,
   useAutoAccept, STOCK_REQUESTS_CHANGED, type StockRequest, type RequestStatus,
 } from '@/lib/stockApproval'
-import { downloadDahuaTransfersPdf } from '@/lib/transfersPdf'
-import { LINE_LABEL } from '@/lib/storeStock'
 
 /**
- * The approval queue — every stock movement staff enter, on either line,
- * waits here for the Big Boss.
+ * The approval queue — every stock movement staff enter waits here for the
+ * Big Boss.
  *
  * Each request is drawn as a docket: the slip a storeman hands over before
  * stock leaves a shelf. Waiting ones carry Approve and Reject; approved ones
@@ -30,20 +28,17 @@ const RED = '#ef4444'
 const KIND: Record<string, string> = { move: 'Move', receive: 'Delivery', return: 'Return' }
 const STAMP: Record<Exclude<RequestStatus, 'pending'>, string> = { approved: 'APPROVED', rejected: 'REJECTED', reversed: 'REVERSED' }
 const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 type View = 'pending' | 'approved' | 'rejected' | 'reversed'
 
-export default function StockApprovals({ isSuperBoss, isBoss, dark, accent = '#0a7cff', accentText = '#ffffff', pdf = true, listHeight = 380 }: {
+export default function StockApprovals({ isSuperBoss, isBoss, dark, accent = '#1f5fd6', accentText = '#ffffff', listHeight = 380 }: {
   isSuperBoss: boolean
   /** Bosses see every request; staff see their own. */
   isBoss: boolean
   dark: boolean
   accent?: string
-  /** Text on the accent colour — dark on the pale Dahua accents. */
+  /** Text on the accent colour. */
   accentText?: string
-  /** The Dahua movements PDF, for bosses. */
-  pdf?: boolean
   /** The tallest the queue grows; past it, it scrolls inside. */
   listHeight?: number
 }) {
@@ -60,13 +55,12 @@ export default function StockApprovals({ isSuperBoss, isBoss, dark, accent = '#0
   // Reject and Reverse ask for a reason in the docket itself, not a pop-up.
   const [asking, setAsking] = useState<{ id: string; act: 'reject' | 'reverse' } | null>(null)
   const [reason, setReason] = useState('')
-  const [day, setDay] = useState(today)
-  const [printing, setPrinting] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setState('loading')
-    try { setRows(await fetchStockRequests()); setState('ready') }
+    // Main shop only. Requests left over from the old second stock pool are not shown.
+    try { setRows((await fetchStockRequests()).filter(r => r.to_line === 'main' && (!r.from_line || r.from_line === 'main'))); setState('ready') }
     catch { if (!quiet) setState('failed') }
   }, [])
   useEffect(() => { load() }, [load])
@@ -125,22 +119,9 @@ export default function StockApprovals({ isSuperBoss, isBoss, dark, accent = '#0
     } finally { setBusy(null) }
   }
 
-  const download = async (which: string | 'all') => {
-    setPrinting(true); setMsg(null)
-    try {
-      const r = await downloadDahuaTransfersPdf(which)
-      setMsg({ ok: true, text: `PDF downloaded: ${r.movements} movement${r.movements === 1 ? '' : 's'}${r.pending ? `, ${r.pending} still waiting for approval` : ''}.` })
-    } catch (e: any) { setMsg({ ok: false, text: e.message || 'Could not make the PDF' }) }
-    finally { setPrinting(false) }
-  }
-
-  const place = (line: string | null, wh: string | null, other: string | null) =>
-    `${wh}${line && other && line !== other ? ` (${LINE_LABEL[line as 'main' | 'dahua']})` : ''}`
   const route = (r: StockRequest) => r.kind === 'move'
-    ? `${place(r.from_line, r.from_warehouse, r.to_line)} → ${place(r.to_line, r.to_warehouse, r.from_line)}`
+    ? `${r.from_warehouse} → ${r.to_warehouse}`
     : r.party ? `${r.party} → ${r.to_warehouse}` : `Into ${r.to_warehouse}`
-  const lineTag = (r: StockRequest) => r.from_line && r.from_line !== r.to_line
-    ? `${LINE_LABEL[r.from_line]} → ${LINE_LABEL[r.to_line]}` : LINE_LABEL[r.to_line]
   const units = (r: StockRequest) => (r.items || []).reduce((s, i) => s + (Number(i.quantity) || 0), 0)
   const btn = (bg: string, fg: string, border = 'none'): React.CSSProperties => ({
     padding: '8px 14px', borderRadius: 8, border, background: bg, color: fg, fontWeight: 800, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap',
@@ -170,7 +151,7 @@ export default function StockApprovals({ isSuperBoss, isBoss, dark, accent = '#0
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', paddingRight: r.status !== 'pending' ? 110 : 0 }}>
           <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 700, color: tone }}>{r.request_number}</span>
-          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.sub }}>{KIND[r.kind]} · {lineTag(r)}</span>
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.sub }}>{KIND[r.kind]}</span>
         </div>
         <div style={{ marginTop: 4, fontSize: 14.5, fontWeight: 800, color: T.text, wordBreak: 'break-word' }}>{route(r)}</div>
         <div style={{ marginTop: 2, fontSize: 12, color: T.sub }}>
@@ -249,7 +230,7 @@ export default function StockApprovals({ isSuperBoss, isBoss, dark, accent = '#0
           </div>
           <div style={{ fontSize: 12, color: T.sub, marginTop: 2 }}>
             {isSuperBoss
-              ? 'Moves, deliveries and returns staff enter — main shop and Dahua — change the stock only when you approve them.'
+              ? 'Moves, deliveries and returns staff enter change the stock only when you approve them.'
               : 'Moves, deliveries and returns go to the Big Boss first. The stock changes when he approves.'}
           </div>
         </div>
@@ -292,16 +273,7 @@ export default function StockApprovals({ isSuperBoss, isBoss, dark, accent = '#0
         {state === 'ready' && shown.map(docket)}
       </div>
 
-      {/* The Dahua movements as a PDF — the Big Boss's record. */}
-      {isBoss && pdf ? (
-        <div style={{ padding: '11px 14px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ color: T.text, fontWeight: 800, fontSize: 13 }}>Dahua movements PDF</span>
-          <input type="date" value={day} max={today()} onChange={e => setDay(e.target.value)} aria-label="Day"
-            style={{ padding: '7px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.input, color: T.text, fontSize: 13 }} />
-          <button type="button" onClick={() => download(day)} disabled={printing || !day} style={btn(accent, onA)}>{printing ? 'Making…' : day === today() ? "Download today's PDF" : 'Download PDF'}</button>
-          <button type="button" onClick={() => download('all')} disabled={printing} style={btn('transparent', accent, `1px solid ${accent}66`)}>All-time PDF</button>
-        </div>
-      ) : <div style={{ height: 10 }} />}
+      <div style={{ height: 10 }} />
     </section>
   )
 }

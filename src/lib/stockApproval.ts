@@ -3,11 +3,15 @@ import { supabase } from '@/lib/supabase'
 import type { StockLine } from '@/lib/storeStock'
 
 /**
- * Stock movements by staff wait for the Big Boss's approval — on both lines
- * (20261017_dahua_movement_approval.sql, 20261023_stock_approval_everywhere.sql).
+ * Stock movements by staff wait for the Big Boss's approval
+ * (20261023_stock_approval_everywhere.sql).
  *
- * Staff file a REQUEST (REQ-… for the main shop, DH-REQ-… when Dahua is
- * involved); the stock changes only when he approves it, and then as the
+ * The requests live in a table still called dahua_movement_requests — the
+ * name is historical (approval began on a second stock pool that is gone);
+ * the table now holds every request, and renaming it would break the
+ * database functions that use it.
+ *
+ * Staff file a REQUEST (REQ-…); the stock changes only when he approves it, and then as the
  * ordinary numbered movement it would have been, credited to the person who
  * asked and dated when they asked. A rejected request changes nothing. An
  * approved one can be reversed, which books a REV-… movement undoing it.
@@ -45,14 +49,12 @@ export interface StockRequest {
   reversal_number?: string | null
   reverse_reason?: string | null
 }
-/** The older name, kept for the pages that still say it. */
-export type DahuaRequest = StockRequest
 
 /** Does this movement need approval for this login? Everyone's but the Big Boss's. */
 export const needsApproval = (isSuperBoss: boolean) => !isSuperBoss
 
 /** Fired on window when a request is filed or decided, so open lists and badges reload. */
-export const STOCK_REQUESTS_CHANGED = 'qbnet:dahua-requests-changed'
+export const STOCK_REQUESTS_CHANGED = 'qbnet:stock-requests-changed'
 /** Fired when the auto-accept switch changes. */
 export const AUTO_ACCEPT_CHANGED = 'qbnet:auto-accept-changed'
 const changed = () => window.dispatchEvent(new CustomEvent(STOCK_REQUESTS_CHANGED))
@@ -76,9 +78,7 @@ export async function requestStockMovement(args: {
     p_party: args.party || null, p_note: args.note || null,
     p_when: args.when ?? new Date().toISOString(),
   }
-  let { data, error } = await supabase.rpc('request_stock_movement', params)
-  // Before 20261023 only Dahua movements could be asked for, under the old name.
-  if (missingFn(error)) ({ data, error } = await supabase.rpc('request_dahua_movement', params))
+  const { data, error } = await supabase.rpc('request_stock_movement', params)
   if (error) throw error
   changed()
   return (Array.isArray(data) ? data[0] : data) as StockRequest
@@ -107,9 +107,9 @@ const call = async <T,>(fn: string, old: string | null, params: Record<string, u
 }
 
 export const approveStockRequest = (id: string) =>
-  call<{ transfer_number: string }>('approve_stock_request', 'approve_dahua_movement', { p_id: id })
+  call<{ transfer_number: string }>('approve_stock_request', null, { p_id: id })
 export const rejectStockRequest = (id: string, reason: string) =>
-  call<void>('reject_stock_request', 'reject_dahua_movement', { p_id: id, p_reason: reason || null })
+  call<void>('reject_stock_request', null, { p_id: id, p_reason: reason || null })
 export const reverseStockRequest = (id: string, reason: string) =>
   call<{ reversal_number: string; transfer_number: string }>('reverse_stock_request', null, { p_id: id, p_reason: reason || null })
 
@@ -168,8 +168,10 @@ export function usePendingCount(enabled: boolean) {
     let alive = true
     const check = async () => {
       if (auto.on) await settleDue()
+      // Main shop only, as every list now shows.
       const { count, error } = await supabase.from('dahua_movement_requests')
-        .select('id', { count: 'exact', head: true }).eq('status', 'pending')
+        .select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('to_line', 'main')
+        .or('from_line.is.null,from_line.eq.main')
       if (alive && !error) setN(count ?? 0)
     }
     check()
@@ -180,7 +182,6 @@ export function usePendingCount(enabled: boolean) {
   }, [enabled, auto.on])
   return n
 }
-export const usePendingDahuaCount = usePendingCount
 
 /**
  * After a staff member files a request: if auto-accept is on, settle it

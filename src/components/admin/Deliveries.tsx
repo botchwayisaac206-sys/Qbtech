@@ -10,11 +10,6 @@ import { fetchDeliveries, invalidate, peek, scopedKey, type DelRow } from '@/lib
 const DEFAULT_ACCENT = '#0a7cff'
 const PAYMENT_METHODS = ['Cash', 'Mobile Money'] as const
 
-/**
- * `dahua` switches the tab onto public.dahua_deliveries. Same form, same
- * 8-hour staff window, same RLS — only the table (and so the dashboard the
- * amounts roll into) changes.
- */
 /** Windowed viewers see the last 24 hours only (RLS enforces it; this keeps a warm cache in step). */
 const clampRows = (rs: DelRow[], windowed: boolean) => windowed ? rs.filter(r => withinWindow(r.delivered_at)) : rs
 
