@@ -7,10 +7,10 @@ import {
 } from 'recharts'
 import { GHS, withinWindow, paymentBuckets } from '@/lib/sales'
 import { useQbDark } from '@/lib/qbTheme'
+import { Banknote, Receipt, TrendingUp, TrendingDown, HandCoins, ArrowUpRight, ArrowDownRight, Search, type LucideIcon } from 'lucide-react'
 import { loadCreditLedger, emptyLedger, type CreditLedger } from '@/lib/debts'
-import { fetchInvoices, fetchInvoiceItems, fetchExpenses, fetchDeliveries, invalidate, peek, scopedKey, getScope, setScope, type DataScope, type InvRow, type ItemRow, type ExpRow, type DelRow, deliveredInvoiceNumbers } from '@/lib/adminCache'
+import { fetchInvoices, fetchInvoiceItems, fetchExpenses, fetchDeliveries, invalidate, peek, scopedKey, getScope, setScope, recentCutoff, type DataScope, type InvRow, type ItemRow, type ExpRow, type DelRow, deliveredInvoiceNumbers } from '@/lib/adminCache'
 
-const TEAL = '#0a7cff'
 
 type Period = 'today' | 'week' | 'weeks' | 'months' | 'years'
 
@@ -20,7 +20,7 @@ const startOfYear  = (d: Date) => new Date(d.getFullYear(), 0, 1)
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
 
 const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
-const DAY_LONG  = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY']
+const DAY_LONG  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 
 interface Range { from: Date; to: Date }
 
@@ -49,6 +49,38 @@ function periodRange(p: Period, weekDay: number | null, now: Date): Range {
 
 const inRange = (ts: string, r: Range) => { const d = new Date(ts); return d >= r.from && d < r.to }
 
+/**
+ * The window to compare the current selection against, cut at the same point
+ * in time — so "today so far" is compared with "yesterday up to this hour",
+ * never with the whole of yesterday. null when there is nothing fair to
+ * compare with (the 4-year view).
+ */
+function previousRange(p: Period, weekDay: number | null, now: Date): { range: Range; label: string } | null {
+  const cur = periodRange(p, weekDay, now)
+  // How much of the current window has actually happened.
+  const elapsed = Math.max(0, Math.min(now.getTime(), cur.to.getTime()) - cur.from.getTime())
+  const back = (from: Date) => ({ from, to: new Date(from.getTime() + elapsed) })
+  if (p === 'today') return { range: back(addDays(cur.from, -1)), label: 'vs yesterday, same time' }
+  if (p === 'week') {
+    return weekDay === null
+      ? { range: back(addDays(cur.from, -7)), label: 'vs last week, same point' }
+      : { range: back(addDays(cur.from, -7)), label: `vs last ${DAY_LONG[weekDay]}` }
+  }
+  if (p === 'weeks') return { range: back(addDays(cur.from, -28)), label: 'vs the 4 weeks before' }
+  if (p === 'months') {
+    const from = new Date(now.getFullYear() - 1, 0, 1)
+    const to = new Date(now); to.setFullYear(now.getFullYear() - 1)
+    return { range: { from, to }, label: `vs ${now.getFullYear() - 1}, same date` }
+  }
+  return null
+}
+
+/** Percentage change, or null when there is no base to compare with. */
+const pctChange = (cur: number, prev: number) => (prev > 0 ? ((cur - prev) / prev) * 100 : null)
+
+/** Payment-method colours: one hue each, the same everywhere on this page. */
+const PAY = { cash: '#2563eb', momo: '#eab308', bank: '#7c3aed', other: '#94a3b8' }
+
 /** Compact money for the day chips, where there is no room for full precision. */
 const shortGHS = (n: number) =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : n.toFixed(0)
@@ -57,8 +89,8 @@ export default function SalesDashboard({ isBoss, windowed = false }: { isBoss: b
   // Charts write SVG attributes, which need real colours rather than CSS variables.
   const chartDark = useQbDark()
   const CH = chartDark
-    ? { red: '#ff453a', grid: 'rgba(84,84,88,0.42)', tick: 'rgba(235,235,245,0.55)' }
-    : { red: '#d70015', grid: 'rgba(60,60,67,0.12)', tick: 'rgba(60,60,67,0.6)' }
+    ? { income: '#4d8dff', red: '#f87171', grid: 'rgba(148,163,184,0.16)', tick: 'rgba(203,213,225,0.7)' }
+    : { income: '#1f5fd6', red: '#dc2626', grid: 'rgba(15,23,42,0.07)', tick: 'rgba(71,85,105,0.85)' }
   // A windowed viewer only ever has 24h of data, so anything but TODAY would
   // render an empty chart — default and pin them to the daily view.
   const [period, setPeriod] = useState<Period>(windowed ? 'today' : 'months')
@@ -174,7 +206,7 @@ export default function SalesDashboard({ isBoss, windowed = false }: { isBoss: b
       return {
         chartData: buckets,
         periodTotal: totalOf(buckets),
-        periodLabel: period === 'today' ? 'TODAY' : DAY_LONG[weekDay as number],
+        periodLabel: period === 'today' ? 'Today' : DAY_LONG[weekDay as number],
       }
     }
     if (period === 'week') {
@@ -182,7 +214,7 @@ export default function SalesDashboard({ isBoss, windowed = false }: { isBoss: b
       invIn.forEach(i => { buckets[new Date(i.issued_at).getDay()].value   += Number(i.total) })
       delIn.forEach(d => { buckets[new Date(d.delivered_at).getDay()].value += Number(d.amount) })
       expIn.forEach(e => { buckets[new Date(e.incurred_at).getDay()].expense += Number(e.amount) })
-      return { chartData: buckets, periodTotal: totalOf(buckets), periodLabel: 'THIS WEEK' }
+      return { chartData: buckets, periodTotal: totalOf(buckets), periodLabel: 'This week' }
     }
     if (period === 'weeks') {
       const buckets = Array.from({ length: 4 }, (_, idx) => {
@@ -193,7 +225,7 @@ export default function SalesDashboard({ isBoss, windowed = false }: { isBoss: b
       invIn.forEach(i => { const bk = find(new Date(i.issued_at));    if (bk) bk.value   += Number(i.total) })
       delIn.forEach(d => { const bk = find(new Date(d.delivered_at)); if (bk) bk.value   += Number(d.amount) })
       expIn.forEach(e => { const bk = find(new Date(e.incurred_at));  if (bk) bk.expense += Number(e.amount) })
-      return { chartData: buckets, periodTotal: totalOf(buckets), periodLabel: 'LAST 4 WEEKS' }
+      return { chartData: buckets, periodTotal: totalOf(buckets), periodLabel: 'Last 4 weeks' }
     }
     if (period === 'months') {
       const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -210,7 +242,7 @@ export default function SalesDashboard({ isBoss, windowed = false }: { isBoss: b
     invIn.forEach(i => { const bk = byYear(new Date(i.issued_at));    if (bk) bk.value   += Number(i.total) })
     delIn.forEach(d => { const bk = byYear(new Date(d.delivered_at)); if (bk) bk.value   += Number(d.amount) })
     expIn.forEach(e => { const bk = byYear(new Date(e.incurred_at));  if (bk) bk.expense += Number(e.amount) })
-    return { chartData: buckets, periodTotal: totalOf(buckets), periodLabel: 'LAST 4 YEARS' }
+    return { chartData: buckets, periodTotal: totalOf(buckets), periodLabel: 'Last 4 years' }
   }, [invoices, expenses, deliveries, period, weekDay])
 
   // ── Per-day totals for the day chips under THIS WEEK ────────────
@@ -335,338 +367,359 @@ export default function SalesDashboard({ isBoss, windowed = false }: { isBoss: b
 
   const topInvoiceCount = productStats.top[0]?.invoiceCount || 1
 
+  // ── The same figures for the comparison window ──────────────────
+  // Hidden when that window reaches back past what has been loaded, so a
+  // "last month only" load never shows a fake −100%.
+  const comparison = useMemo(() => {
+    const prev = previousRange(period, weekDay, new Date())
+    if (!prev) return null
+    const cutoff = scope === 'recent' ? recentCutoff() : null
+    if (cutoff && prev.range.from < new Date(cutoff)) return null
+    const income = invoices.filter(i => inRange(i.issued_at, prev.range)).reduce((s, i) => s + Number(i.total), 0)
+      + deliveries.filter(d => inRange(d.delivered_at, prev.range)).reduce((s, d) => s + Number(d.amount), 0)
+    const expense = expenses.filter(e => inRange(e.incurred_at, prev.range)).reduce((s, e) => s + Number(e.amount), 0)
+    return { label: prev.label, income, expense, net: income - expense }
+  }, [invoices, expenses, deliveries, period, weekDay, scope])
+
+  const retry = () => { invalidate('invoices', 'invoice_items', 'expenses', 'deliveries'); setReloadKey(k => k + 1) }
+
   if (error) return (
-    <div style={{ padding: 48, textAlign: 'center', color: 'var(--qb-red)', fontVariantNumeric: 'tabular-nums', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-      <div>⚠️ {error}</div>
-      <button
-        onClick={() => { invalidate('invoices', 'invoice_items', 'expenses'); setReloadKey(k => k + 1) }}
-        style={{ padding: '10px 20px', borderRadius: 10, background: TEAL, color: '#ffffff', fontWeight: 800, border: 'none', cursor: 'pointer', fontSize: 12, letterSpacing: '0.1em' }}>
-        RETRY
-      </button>
+    <div style={{ ...card, padding: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+      <div style={{ color: 'var(--qb-red)', fontWeight: 600 }}>Couldn’t load the dashboard: {error}</div>
+      <button onClick={retry} style={btnPrimary}>Try again</button>
     </div>
   )
 
   if (loading) return (
-    <div style={{ padding: 48, textAlign: 'center', color: 'var(--qb-muted)', fontVariantNumeric: 'tabular-nums', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-      <div>Loading sales…</div>
-      <button
-        onClick={() => { invalidate('invoices', 'invoice_items', 'expenses'); setReloadKey(k => k + 1) }}
-        style={{ padding: '6px 14px', borderRadius: 8, background: 'transparent', color: 'var(--qb-muted)', border: '1px solid #334155', cursor: 'pointer', fontSize: 11 }}>
-        taking too long? retry
-      </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={kpiGrid}>
+        {[0, 1, 2, 3].map(i => <div key={i} style={{ ...card, height: 132, background: 'var(--qb-card)', opacity: 0.6 }} />)}
+      </div>
+      <div style={{ color: 'var(--qb-muted)', fontSize: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+        Loading sales…
+        <button onClick={retry} style={btnGhost}>Taking too long? Retry</button>
+      </div>
     </div>
   )
+
+  const s = periodStats
+  const netIncome = s.income - s.expenseTotal
+  const sales = s.count + s.deliveryCount
+  const avgSale = sales > 0 ? (s.income - s.debtIncome) / sales : 0
+  const payTotal = s.cash + s.momo + s.bank + s.other
+  const payRows = ([
+    ['Cash', s.cash, PAY.cash],
+    ['Mobile Money', s.momo, PAY.momo],
+    ['Bank transfer', s.bank, PAY.bank],
+    ['Other', s.other, PAY.other],
+  ] as [string, number, string][]).filter(([, v], i) => i < 2 || v > 0)
+  const periods: [Period, string][] = windowed
+    ? [['today', 'Today']]
+    : [['today', 'Today'], ['week', 'This week'], ['weeks', '4 weeks'], ['months', 'This year'], ['years', '4 years']]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-      {/* ── Period tabs ─────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', gap: 6, background: 'var(--qb-card)',
-        border: '1px solid var(--qb-border)', borderRadius: 12, padding: 4, width: 'fit-content', flexWrap: 'wrap'
-      }}>
-        {(windowed
-          ? [['today', 'TODAY']] as [Period, string][]
-          : ([
-            ['today',  'TODAY'],
-            ['week',   'THIS WEEK'],
-            ['weeks',  'WEEKS'],
-            ['months', 'MONTHS'],
-            ['years',  'YEARS'],
-          ] as [Period, string][])
-        ).map(([k, l]) => (
-          <button key={k} onClick={() => { setPeriod(k); if (k !== 'week') setWeekDay(null) }} style={{
-            padding: '10px 18px', borderRadius: 8, fontWeight: 800, fontSize: 11, letterSpacing: '0.12em',
-            border: 'none', cursor: 'pointer',
-            background: period === k ? TEAL : 'transparent',
-            color: period === k ? '#ffffff' : 'var(--qb-sub)',
-          }}>{l}</button>
-        ))}
-      </div>
-
-      {/* ── Day-of-week chips (THIS WEEK only) ───────────────────── */}
-      {period === 'week' && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'stretch' }}>
-          <button onClick={() => setWeekDay(null)} style={{
-            padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(10,124,255,0.25)',
-            cursor: 'pointer', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
-            background: weekDay === null ? TEAL : 'transparent',
-            color: weekDay === null ? '#ffffff' : 'var(--qb-sub)',
-          }}>ALL WEEK</button>
-          {DAY_SHORT.map((name, i) => {
-            const isFuture = i > new Date().getDay()
-            const active = weekDay === i
-            const amount = weekDayTotals[i]
+      {/* ── Toolbar: which period, and how much history is loaded ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div role="tablist" aria-label="Period" style={{ display: 'flex', gap: 2, padding: 3, borderRadius: 12, background: 'var(--qb-card)', border: '1px solid var(--qb-border)', flexWrap: 'wrap', boxShadow: 'none' }}>
+          {periods.map(([k, l]) => {
+            const on = period === k
             return (
-              <button key={name} disabled={isFuture} onClick={() => setWeekDay(i)} style={{
-                padding: '6px 14px', borderRadius: 10, cursor: isFuture ? 'not-allowed' : 'pointer',
-                border: `1px solid ${active ? TEAL : 'rgba(10,124,255,0.18)'}`,
-                background: active ? TEAL : 'transparent',
-                opacity: isFuture ? 0.35 : 1,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 62,
-              }}>
-                <span style={{
-                  fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
-                  color: active ? '#ffffff' : 'var(--qb-sub)',
-                }}>{name.toUpperCase()}</span>
-                <span style={{
-                  fontSize: 10, fontVariantNumeric: 'tabular-nums', fontWeight: 700,
-                  color: active ? '#ffffff' : amount > 0 ? TEAL : 'var(--qb-faint)',
-                }}>{amount > 0 ? shortGHS(amount) : '—'}</span>
-              </button>
+              <button key={k} role="tab" aria-selected={on} onClick={() => { setPeriod(k); if (k !== 'week') setWeekDay(null) }} style={{
+                padding: '8px 14px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13.5, fontWeight: on ? 650 : 500,
+                background: on ? ACC : 'transparent', color: on ? '#fff' : 'var(--qb-sub)',
+              }}>{l}</button>
             )
           })}
         </div>
-      )}
 
-      {/* ── Load scope ───────────────────────────────────────────── */}
-      {!windowed && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button
-          disabled={scopeBusy}
-          onClick={() => {
-            const next: DataScope = scope === 'all' ? 'recent' : 'all'
-            setScope(next)
-            setScopeBusy(true)
-            setScopeState(next)   // effect deps include scope → refetches
-          }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 999,
-            border: `1px solid ${scope === 'all' ? 'rgba(251,191,36,0.4)' : 'rgba(10,124,255,0.2)'}`,
-            background: 'transparent', cursor: scopeBusy ? 'wait' : 'pointer',
-            opacity: scopeBusy ? 0.6 : 1,
-          }}>
-          <span style={{
-            width: 30, height: 16, borderRadius: 999, position: 'relative', flexShrink: 0,
-            background: scope === 'all' ? 'var(--qb-orange)' : 'rgba(100,116,139,0.35)',
-            transition: 'background 0.15s',
-          }}>
-            <span style={{
-              position: 'absolute', top: 2, left: scope === 'all' ? 16 : 2,
-              width: 12, height: 12, borderRadius: '50%', background: 'var(--qb-bg)',
-              transition: 'left 0.15s',
-            }} />
-          </span>
-          <span style={{
-            fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
-            color: scope === 'all' ? 'var(--qb-orange)' : 'var(--qb-sub)',
-          }}>{scope === 'all' ? 'ALL HISTORY' : 'LAST MONTH'}</span>
-        </button>
-        <span style={{ color: scopeBusy ? TEAL : 'var(--qb-faint)', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>
-          {scopeBusy
-            ? 'Reloading…'
-            : scope === 'all'
-              ? 'Every invoice loaded — slower, but MONTHS and YEARS are complete.'
-              : 'Last month only. Turn on for full-year totals.'}
-        </span>
+        {!windowed && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 12.5, color: scopeBusy ? ACC : 'var(--qb-muted)' }}>
+              {scopeBusy ? 'Reloading…' : scope === 'all' ? 'All history loaded' : 'Last month loaded'}
+            </span>
+            <button
+              disabled={scopeBusy}
+              onClick={() => {
+                const next: DataScope = scope === 'all' ? 'recent' : 'all'
+                setScope(next); setScopeBusy(true); setScopeState(next)   // effect deps include scope → refetches
+              }}
+              style={{ ...btnGhost, cursor: scopeBusy ? 'wait' : 'pointer', opacity: scopeBusy ? 0.6 : 1 }}>
+              {scope === 'all' ? 'Load last month only' : 'Load all history'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* ── Day chips (This week only) ── */}
+      {period === 'week' && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <DayChip active={weekDay === null} onClick={() => setWeekDay(null)} top="Whole week" bottom={shortGHS(weekDayTotals.reduce((a, b) => a + b, 0))} />
+          {DAY_SHORT.map((name, i) => (
+            <DayChip key={name} active={weekDay === i} disabled={i > new Date().getDay()} onClick={() => setWeekDay(i)}
+              top={name} bottom={weekDayTotals[i] > 0 ? shortGHS(weekDayTotals[i]) : '—'} />
+          ))}
+        </div>
       )}
 
-      {/* ── Incomplete-range notice ──────────────────────────────── */}
+      {/* ── Incomplete-range notice ── */}
       {!windowed && scope === 'recent' && (period === 'months' || period === 'years') && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-          padding: '12px 16px', borderRadius: 12,
-          border: '1px solid rgba(251,191,36,0.35)', background: 'rgba(251,191,36,0.07)',
-        }}>
-          <span style={{ fontSize: 13, color: 'var(--qb-orange)', fontWeight: 700 }}>
-            Showing last month only
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 16px', borderRadius: 12, background: 'var(--qb-amber-soft)', border: '1px solid color-mix(in srgb, var(--qb-amber) 30%, transparent)' }}>
+          <span style={{ fontSize: 14, color: 'var(--qb-amber)', fontWeight: 700 }}>These totals are incomplete</span>
+          <span style={{ fontSize: 13.5, color: 'var(--qb-sub)', flex: 1, minWidth: 220 }}>
+            {periodLabel} needs the full history, but only the last month is loaded.
           </span>
-          <span style={{ fontSize: 12, color: 'var(--qb-sub)', flex: 1, minWidth: 220 }}>
-            {periodLabel} needs the full history, so these totals are incomplete.
-          </span>
-          <button
-            disabled={scopeBusy}
-            onClick={() => { setScope('all'); setScopeBusy(true); setScopeState('all') }}
-            style={{
-              padding: '8px 14px', borderRadius: 8, border: 'none',
-              background: scopeBusy ? 'var(--qb-fill)' : 'var(--qb-orange)',
-              color: scopeBusy ? 'var(--qb-muted)' : '#ffffff',
-              fontWeight: 800, fontSize: 11, letterSpacing: '0.1em',
-              cursor: scopeBusy ? 'wait' : 'pointer', whiteSpace: 'nowrap',
-            }}>
-            {scopeBusy ? 'LOADING…' : 'LOAD ALL HISTORY'}
+          <button disabled={scopeBusy} onClick={() => { setScope('all'); setScopeBusy(true); setScopeState('all') }}
+            style={{ ...btnPrimary, background: 'var(--qb-amber)', color: 'var(--qb-solid)', cursor: scopeBusy ? 'wait' : 'pointer' }}>
+            {scopeBusy ? 'Loading…' : 'Load all history'}
           </button>
         </div>
       )}
 
-      {/* ── Top KPI row ──────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
-        {/* Sales card — split by payment method, period-aware */}
-        <div style={{ padding: 18, borderRadius: 14, border: '1px solid var(--qb-border)', background: 'var(--qb-card)' }}>
-          <div style={{ color: 'var(--qb-sub)', fontSize: 10, fontWeight: 800, letterSpacing: '0.18em' }}>TOTAL SALES · {periodLabel}</div>
-          <div style={{ color: 'var(--qb-text)', fontSize: 16, fontWeight: 700, marginTop: 8 }}>{GHS(periodStats.income)}</div>
-          <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 12, background: 'var(--qb-separator)' }}>
-            {periodStats.income > 0 && <>
-              <div style={{ width: `${(periodStats.cash / periodStats.income) * 100}%`, background: TEAL }} />
-              <div style={{ width: `${(periodStats.momo  / periodStats.income) * 100}%`, background: '#a78bfa' }} />
-              <div style={{ width: `${(periodStats.bank  / periodStats.income) * 100}%`, background: '#38bdf8' }} />
-            </>}
-          </div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
-            <div><div style={{ color: TEAL,      fontWeight: 700, fontSize: 11 }}>Cash</div><div style={{ color: 'var(--qb-text)', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(periodStats.cash)}</div></div>
-            <div><div style={{ color: '#a78bfa', fontWeight: 700, fontSize: 11 }}>MoMo</div><div style={{ color: 'var(--qb-text)', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(periodStats.momo)}</div></div>
-            {periodStats.bank  > 0 && <div><div style={{ color: '#38bdf8', fontWeight: 700, fontSize: 11 }}>Bank</div> <div style={{ color: 'var(--qb-text)', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(periodStats.bank)}</div></div>}
-            {periodStats.other > 0 && <div><div style={{ color: 'var(--qb-muted)', fontWeight: 700, fontSize: 11 }}>Other</div><div style={{ color: 'var(--qb-text)', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(periodStats.other)}</div></div>}
-            {periodStats.deliveryIncome > 0 && <div><div style={{ color: 'var(--qb-orange)', fontWeight: 700, fontSize: 11 }}>🚚 Delivery</div><div style={{ color: 'var(--qb-text)', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(periodStats.deliveryIncome)}</div></div>}
-            {periodStats.debtIncome > 0 && <div><div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 11 }}>🧾 Debts paid</div><div style={{ color: 'var(--qb-text)', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(periodStats.debtIncome)}</div></div>}
-            {ledger.outstanding > 0 && <div title="Sold on credit and not yet paid. Not part of the sales figure."><div style={{ color: 'var(--qb-sub)', fontWeight: 700, fontSize: 11 }}>Still owed</div><div style={{ color: '#f59e0b', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(ledger.outstanding)}</div></div>}
-          </div>
-        </div>
-        {/* Net card — period-aware */}
-        <div style={{ padding: 18, borderRadius: 14, border: '1px solid var(--qb-border)', background: 'var(--qb-card)' }}>
-          <div style={{ color: 'var(--qb-sub)', fontSize: 10, fontWeight: 800, letterSpacing: '0.18em' }}>NET PROFIT · {periodLabel}</div>
-          <div style={{ color: 'var(--qb-text)', fontSize: 16, fontWeight: 700, marginTop: 8 }}>Cash − Expenses</div>
-          <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 12, background: 'var(--qb-separator)' }}>
-            {periodStats.cash > 0 && <div style={{ width: `${Math.min(100, (periodStats.expenseTotal / periodStats.cash) * 100)}%`, background: 'var(--qb-red)' }} />}
-          </div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
-            <div><div style={{ color: TEAL,      fontWeight: 700, fontSize: 11 }}>Cash</div>    <div style={{ color: 'var(--qb-text)', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(periodStats.cash)}</div></div>
-            <div><div style={{ color: 'var(--qb-red)', fontWeight: 700, fontSize: 11 }}>Expenses</div><div style={{ color: 'var(--qb-text)', fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{GHS(periodStats.expenseTotal)}</div></div>
-            <div><div style={{ color: periodStats.net >= 0 ? TEAL : 'var(--qb-red)', fontWeight: 700, fontSize: 11 }}>Net</div><div style={{ color: periodStats.net >= 0 ? TEAL : 'var(--qb-red)', fontVariantNumeric: 'tabular-nums', fontSize: 13, fontWeight: 900 }}>{GHS(periodStats.net)}</div></div>
-          </div>
-        </div>
+      {/* ── The four numbers that matter ── */}
+      <div style={kpiGrid}>
+        <Kpi icon={Banknote} tone="accent" label={`Sales · ${periodLabel}`} value={GHS(s.income)}
+          delta={comparison && pctChange(s.income, comparison.income)} deltaLabel={comparison?.label}
+          foot={`${s.count} ${s.count === 1 ? 'invoice' : 'invoices'}${s.deliveryCount ? ` · ${s.deliveryCount} ${s.deliveryCount === 1 ? 'delivery' : 'deliveries'}` : ''}`} />
+        <Kpi icon={Receipt} tone="red" label={`Expenses · ${periodLabel}`} value={GHS(s.expenseTotal)} invert
+          delta={comparison && pctChange(s.expenseTotal, comparison.expense)} deltaLabel={comparison?.label}
+          foot={s.income > 0 ? `${Math.round((s.expenseTotal / s.income) * 100)}% of sales` : 'No sales yet'} />
+        <Kpi icon={netIncome >= 0 ? TrendingUp : TrendingDown} tone={netIncome >= 0 ? 'green' : 'red'} label={`Net · ${periodLabel}`}
+          value={GHS(netIncome)} valueTone={netIncome >= 0 ? 'green' : 'red'}
+          delta={comparison && comparison.net > 0 ? pctChange(netIncome, comparison.net) : null} deltaLabel={comparison?.label}
+          foot={s.income > 0 ? `Sales − expenses · ${Math.round((netIncome / s.income) * 100)}% margin` : 'Sales − expenses'} />
+        <Kpi icon={HandCoins} tone="amber" label="Owed by customers" value={GHS(ledger.outstanding)} valueTone={ledger.outstanding > 0 ? 'amber' : undefined}
+          foot={ledger.debtors > 0 ? `${ledger.debtors} open ${ledger.debtors === 1 ? 'debt' : 'debts'} · not counted in sales` : 'Nobody owes anything'} />
       </div>
 
-      {/* ── Period total ─────────────────────────────────────────── */}
-      <div style={{
-        padding: 24, borderRadius: 16,
-        border: '1px solid rgba(10,124,255,0.18)',
-        background: 'linear-gradient(135deg, var(--qb-header), var(--qb-card))',
-      }}>
-        <div style={{ color: TEAL, fontSize: 11, fontWeight: 800, letterSpacing: '0.2em', marginBottom: 6 }}>SALES · {periodLabel}</div>
-        <div style={{ color: 'var(--qb-text)', fontSize: 44, fontWeight: 900, lineHeight: 1.1 }}>{GHS(periodStats.income)}</div>
-        <div style={{ color: 'var(--qb-muted)', fontSize: 12, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
-          {periodStats.count} {periodStats.count === 1 ? 'invoice' : 'invoices'}
-        </div>
-        {/* NET — income minus expenses for the same period */}
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', color: 'var(--qb-muted)' }}>NET REVENUE</span>
-          <span style={{
-            fontSize: 22, fontWeight: 900, fontVariantNumeric: 'tabular-nums',
-            color: periodStats.net >= 0 ? TEAL : 'var(--qb-red)',
-          }}>{GHS(periodStats.net)}</span>
-          {periodStats.expenseTotal > 0 && (
-            <span style={{ fontSize: 11, color: 'var(--qb-faint)', fontVariantNumeric: 'tabular-nums' }}>
-              − {GHS(periodStats.expenseTotal)} expenses
-            </span>
-          )}
-        </div>
+      {/* ── Supporting figures ── */}
+      <div style={{ ...card, padding: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
+        <Mini label="Average sale" value={GHS(avgSale)} hint="Per invoice or delivery" />
+        <Mini label="Cash in hand" value={GHS(s.net)} hint="Cash taken − expenses" tone={s.net < 0 ? 'red' : undefined} />
+        <Mini label="Debts collected" value={GHS(s.debtIncome)} hint="Included in sales" />
+        <Mini label="Delivery sales" value={GHS(s.deliveryIncome)} hint={`${s.deliveryCount} ${s.deliveryCount === 1 ? 'delivery' : 'deliveries'}`} last />
       </div>
 
-      {/* ── Cash Flow Line Chart ────────────────────────────────── */}
-      <div style={{ padding: 20, borderRadius: 14, border: '1px solid var(--qb-border)', background: 'var(--qb-card)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          <div style={{ color: 'var(--qb-sub)', fontSize: 11, fontWeight: 800, letterSpacing: '0.18em' }}>CASH FLOW</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: TEAL, fontWeight: 700 }}>
-              <span style={{ width: 18, height: 2, background: TEAL, display: 'inline-block', borderRadius: 1 }} />
-              INCOME
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--qb-red)', fontWeight: 700 }}>
-              <span style={{ width: 18, height: 0, display: 'inline-block', borderTop: '2px dashed #f87171' }} />
-              EXPENSE
-            </span>
-            <div style={{ color: TEAL, fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{GHS(periodTotal)}</div>
-          </div>
-        </div>
-        <div style={{ width: '100%', height: 260 }}>
-          <ResponsiveContainer>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="cf" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={TEAL} stopOpacity={0.35} />
-                  <stop offset="100%" stopColor={TEAL} stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="exp" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={CH.red} stopOpacity={0.2} />
-                  <stop offset="100%" stopColor={CH.red} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke={CH.grid} vertical={false} />
-              <XAxis dataKey="label" tick={{ fill: CH.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: CH.tick, fontSize: 11 }} axisLine={false} tickLine={false}
-                     tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
-              <Tooltip
-                contentStyle={{ background: 'var(--qb-card-strong)', backdropFilter: 'blur(20px)', border: '1px solid var(--qb-border)', borderRadius: 12, color: 'var(--qb-text)' }}
-                formatter={(v: any, name: any) => [GHS(Number(v)), name === 'value' ? 'Income' : 'Expense']}
-              />
-              <Area type="monotone" dataKey="value"   name="Income"  stroke={TEAL}     strokeWidth={2} fill="url(#cf)"  />
-              <Area type="monotone" dataKey="expense" name="Expense" stroke={CH.red} strokeWidth={2} strokeDasharray="5 3" fill="url(#exp)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* ── Income vs Expense & Top products ──────────────────────
-          All three are year-scoped rollups, so they're withheld from a
-          windowed viewer rather than rendered as empty charts. */}
-      {!windowed && (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 14 }}>
-        <Card title="INCOME VS EXPENSE">
-          <div style={{ width: '100%', height: 220 }}>
+      {/* ── Cash flow + how customers paid ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 16 }}>
+        <div style={{ ...card, gridColumn: 'span 2', minWidth: 0 }} className="qb-span2">
+          <CardHead title="Money in and out" sub={periodLabel}>
+            <Legend color={CH.income} label="Sales" />
+            <Legend color={CH.red} label="Expenses" dashed />
+          </CardHead>
+          <div style={{ width: '100%', height: 260 }}>
             <ResponsiveContainer>
-              <BarChart data={incomeVsExpense}>
+              <AreaChart data={chartData} margin={{ top: 6, right: 6, left: -8, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="cf" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CH.income} stopOpacity={0.28} />
+                    <stop offset="100%" stopColor={CH.income} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid stroke={CH.grid} vertical={false} />
                 <XAxis dataKey="label" tick={{ fill: CH.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: CH.tick, fontSize: 10 }} axisLine={false} tickLine={false}
-                       tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
-                <Tooltip contentStyle={{ background: 'var(--qb-card-strong)', backdropFilter: 'blur(20px)', border: '1px solid var(--qb-border)', borderRadius: 12 }}
-                         formatter={(v: any) => GHS(Number(v))} />
-                <Bar dataKey="income"  fill={TEAL} radius={[4,4,0,0]} />
-                <Bar dataKey="expense" fill={CH.red} radius={[4,4,0,0]} />
+                <YAxis tick={{ fill: CH.tick, fontSize: 11 }} axisLine={false} tickLine={false} width={48}
+                       tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
+                <Tooltip contentStyle={tooltipStyle}
+                  formatter={(v: any, name: any) => [GHS(Number(v)), name === 'value' ? 'Sales' : 'Expenses']} />
+                <Area type="monotone" dataKey="value"   name="value"   stroke={CH.income} strokeWidth={2.2} fill="url(#cf)" />
+                <Area type="monotone" dataKey="expense" name="expense" stroke={CH.red} strokeWidth={1.8} strokeDasharray="5 4" fill="none" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div style={card}>
+          <CardHead title="How customers paid" sub={periodLabel} />
+          <div style={{ display: 'flex', height: 10, borderRadius: 999, overflow: 'hidden', background: 'var(--qb-fill)', gap: 2 }}>
+            {payTotal > 0 && payRows.map(([l, v, c]) => v > 0 && <div key={l} title={l} style={{ width: `${(v / payTotal) * 100}%`, background: c }} />)}
+          </div>
+          <ul style={{ listStyle: 'none', margin: '14px 0 0', padding: 0, display: 'flex', flexDirection: 'column' }}>
+            {payRows.map(([l, v, c]) => (
+              <li key={l} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid var(--qb-separator)', fontSize: 14 }}>
+                <span aria-hidden style={{ width: 10, height: 10, borderRadius: 3, background: c, flexShrink: 0 }} />
+                <span style={{ flex: 1, color: 'var(--qb-sub)' }}>{l}</span>
+                <span style={{ color: 'var(--qb-muted)', fontSize: 12.5, fontVariantNumeric: 'tabular-nums', minWidth: 38, textAlign: 'right' }}>
+                  {payTotal > 0 ? `${Math.round((v / payTotal) * 100)}%` : '—'}
+                </span>
+                <span style={{ color: 'var(--qb-text)', fontWeight: 600, fontVariantNumeric: 'tabular-nums', minWidth: 110, textAlign: 'right' }}>{GHS(v)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* ── Year-scoped rollups: withheld from a windowed viewer rather than shown empty ── */}
+      {!windowed && (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 16 }}>
+        <div style={card}>
+          <CardHead title="Sales vs expenses by month" sub={String(new Date().getFullYear())}>
+            <Legend color={CH.income} label="Sales" />
+            <Legend color={CH.red} label="Expenses" />
+          </CardHead>
+          <div style={{ width: '100%', height: 240 }}>
+            <ResponsiveContainer>
+              <BarChart data={incomeVsExpense} margin={{ top: 6, right: 0, left: -14, bottom: 0 }} barGap={2}>
+                <CartesianGrid stroke={CH.grid} vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: CH.tick, fontSize: 10.5 }} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={{ fill: CH.tick, fontSize: 10.5 }} axisLine={false} tickLine={false}
+                       tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: CH.grid }}
+                  formatter={(v: any, name: any) => [GHS(Number(v)), name === 'income' ? 'Sales' : 'Expenses']} />
+                <Bar dataKey="income"  fill={CH.income} radius={[4,4,0,0]} maxBarSize={18} />
+                <Bar dataKey="expense" fill={CH.red} radius={[4,4,0,0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </Card>
+        </div>
 
-        <Card title="TOP SELLING PRODUCTS">
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto' }}>
-            {productStats.top.map(p => {
-              const pct = Math.round((p.invoiceCount / topInvoiceCount) * 100)
-              return (
-                <li key={p.desc} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--qb-text)', gap: 8 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{p.desc}</span>
-                    <span style={{ color: TEAL, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                      {p.invoiceCount} {p.invoiceCount === 1 ? 'invoice' : 'invoices'}
-                    </span>
+        <div style={card}>
+          <CardHead title="Best-selling products" sub="By number of invoices" />
+          <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
+            {productStats.top.map((p, i) => (
+              <li key={p.desc} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 13.5 }}>
+                  <span style={{ color: 'var(--qb-faint)', fontVariantNumeric: 'tabular-nums', width: 18, flexShrink: 0 }}>{i + 1}</span>
+                  <span style={{ flex: 1, color: 'var(--qb-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.desc}</span>
+                  <span style={{ color: 'var(--qb-text)', fontWeight: 650, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{p.invoiceCount}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 26 }}>
+                  <div style={{ flex: 1, height: 5, background: 'var(--qb-fill)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.round((p.invoiceCount / topInvoiceCount) * 100)}%`, height: '100%', background: ACC, borderRadius: 3 }} />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ flex: 1, height: 6, background: 'var(--qb-header)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: TEAL }} />
-                    </div>
-                    <span style={{ color: 'var(--qb-muted)', fontSize: 10, fontVariantNumeric: 'tabular-nums', minWidth: 56, textAlign: 'right' }}>{p.qty} units</span>
-                  </div>
-                </li>
-              )
-            })}
-            {productStats.top.length === 0 && <li style={{ color: 'var(--qb-muted)', fontSize: 12 }}>No sales yet.</li>}
-          </ul>
-        </Card>
-
-        <Card title="LEAST SELLING PRODUCTS">
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {productStats.least.map(p => (
-              <li key={p.desc} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--qb-text)' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{p.desc}</span>
-                <span style={{ color: '#f59e0b', fontWeight: 700 }}>{p.qty} units</span>
+                  <span style={{ color: 'var(--qb-muted)', fontSize: 11.5, fontVariantNumeric: 'tabular-nums', minWidth: 120, textAlign: 'right' }}>{p.qty} units · {shortGHS(p.total)}</span>
+                </div>
               </li>
             ))}
-            {productStats.least.length === 0 && <li style={{ color: 'var(--qb-muted)', fontSize: 12 }}>—</li>}
+            {productStats.top.length === 0 && <li style={{ color: 'var(--qb-muted)', fontSize: 13.5 }}>No sales yet.</li>}
+          </ol>
+        </div>
+
+        <div style={card}>
+          <CardHead title="Slow movers" sub="Fewest invoices — consider a promotion" />
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column' }}>
+            {productStats.least.map(p => (
+              <li key={p.desc} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13.5, padding: '9px 0', borderTop: '1px solid var(--qb-separator)' }}>
+                <span style={{ color: 'var(--qb-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{p.desc}</span>
+                <span style={{ color: 'var(--qb-amber)', fontWeight: 650, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{p.qty} {p.qty === 1 ? 'unit' : 'units'}</span>
+              </li>
+            ))}
+            {productStats.least.length === 0 && <li style={{ color: 'var(--qb-muted)', fontSize: 13.5 }}>Nothing yet.</li>}
           </ul>
-        </Card>
+        </div>
       </div>
       )}
 
-      {/* ── Top customers: year + 4 months ───────────────────────── */}
+      {/* ── Best customers: this year + last 4 months ── */}
       {!windowed && (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(360px,1fr))', gap: 14 }}>
-        <TopCustomersCard title={`🏆 BEST CUSTOMERS · ${new Date().getFullYear()}`} rows={customerRanks.year} />
-        <TopCustomersCard title="⭐ BEST CUSTOMERS · LAST 4 MONTHS" rows={customerRanks.fourMonths} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 16 }}>
+        <TopCustomersCard title={`Best customers · ${new Date().getFullYear()}`} rows={customerRanks.year} />
+        <TopCustomersCard title="Best customers · last 4 months" rows={customerRanks.fourMonths} />
       </div>
       )}
+
+      <style>{`@media (max-width: 760px) { .qb-span2 { grid-column: auto !important; } }`}</style>
     </div>
+  )
+}
+
+// ── Building blocks ─────────────────────────────────────────────
+
+const ACC = 'var(--qb-accent)'
+const card: React.CSSProperties = { padding: 18, borderRadius: 16, border: '1px solid var(--qb-border)', background: 'var(--qb-card)' }
+const kpiGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 230px), 1fr))', gap: 16 }
+const btnPrimary: React.CSSProperties = { padding: '9px 16px', borderRadius: 10, border: 'none', background: ACC, color: '#fff', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }
+const btnGhost: React.CSSProperties = { padding: '7px 12px', borderRadius: 10, border: '1px solid var(--qb-border)', background: 'var(--qb-card)', color: 'var(--qb-text)', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: 'none' }
+const tooltipStyle: React.CSSProperties = { background: 'var(--qb-solid)', border: '1px solid var(--qb-border)', borderRadius: 10, color: 'var(--qb-text)', fontSize: 13, boxShadow: 'var(--qb-shadow)' }
+
+type Tone = 'accent' | 'green' | 'red' | 'amber'
+const TONE: Record<Tone, { fg: string; bg: string }> = {
+  accent: { fg: 'var(--qb-accent)', bg: 'var(--qb-accent-soft)' },
+  green:  { fg: 'var(--qb-green)',  bg: 'var(--qb-green-soft)' },
+  red:    { fg: 'var(--qb-red)',    bg: 'var(--qb-red-soft)' },
+  amber:  { fg: 'var(--qb-amber)',  bg: 'var(--qb-amber-soft)' },
+}
+
+/**
+ * One headline number. `delta` is the % change against the comparison
+ * window; `invert` marks figures where going up is bad (expenses).
+ */
+function Kpi({ icon: Icon, tone, label, value, valueTone, foot, delta, deltaLabel, invert }: {
+  icon: LucideIcon; tone: Tone; label: string; value: string; valueTone?: Tone; foot?: string
+  delta?: number | null; deltaLabel?: string; invert?: boolean
+}) {
+  const has = typeof delta === 'number' && isFinite(delta)
+  const up = has && (delta as number) >= 0
+  const good = has && (invert ? !up : up)
+  return (
+    <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span aria-hidden style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', background: TONE[tone].bg, color: TONE[tone].fg, flexShrink: 0 }}>
+          <Icon size={18} strokeWidth={2.2} />
+        </span>
+        <span style={{ color: 'var(--qb-sub)', fontSize: 13.5, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      </div>
+      <div style={{ color: valueTone ? TONE[valueTone].fg : 'var(--qb-text)', fontSize: 27, fontWeight: 750, letterSpacing: '-0.02em', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+        {value}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--qb-muted)' }}>
+        {has && (
+          <span title={deltaLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 999, fontWeight: 700,
+            color: good ? 'var(--qb-green)' : 'var(--qb-red)', background: good ? 'var(--qb-green-soft)' : 'var(--qb-red-soft)' }}>
+            {up ? <ArrowUpRight size={13} strokeWidth={2.6} /> : <ArrowDownRight size={13} strokeWidth={2.6} />}
+            {Math.abs(delta as number) >= 1000 ? '999+' : Math.abs(delta as number).toFixed(Math.abs(delta as number) < 10 ? 1 : 0)}%
+          </span>
+        )}
+        {has && deltaLabel && <span>{deltaLabel}</span>}
+        {!has && foot && <span>{foot}</span>}
+      </div>
+      {has && foot && <div style={{ fontSize: 12.5, color: 'var(--qb-muted)', marginTop: -4 }}>{foot}</div>}
+    </div>
+  )
+}
+
+function Mini({ label, value, hint, tone, last }: { label: string; value: string; hint: string; tone?: Tone; last?: boolean }) {
+  return (
+    <div style={{ padding: '14px 18px', borderRight: last ? 'none' : '1px solid var(--qb-separator)', minWidth: 0 }}>
+      <div style={{ color: 'var(--qb-muted)', fontSize: 12.5, fontWeight: 600 }}>{label}</div>
+      <div style={{ color: tone ? TONE[tone].fg : 'var(--qb-text)', fontSize: 18, fontWeight: 700, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ color: 'var(--qb-faint)', fontSize: 12, marginTop: 2 }}>{hint}</div>
+    </div>
+  )
+}
+
+function CardHead({ title, sub, children }: { title: string; sub?: string; children?: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div>
+        <div style={{ color: 'var(--qb-text)', fontSize: 15, fontWeight: 700 }}>{title}</div>
+        {sub && <div style={{ color: 'var(--qb-muted)', fontSize: 12.5, marginTop: 1 }}>{sub}</div>}
+      </div>
+      {children && <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>{children}</div>}
+    </div>
+  )
+}
+
+function Legend({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--qb-sub)', fontWeight: 600 }}>
+      <span aria-hidden style={{ width: 16, height: 0, borderTop: `2.5px ${dashed ? 'dashed' : 'solid'} ${color}` }} />
+      {label}
+    </span>
+  )
+}
+
+function DayChip({ active, disabled, onClick, top, bottom }: { active: boolean; disabled?: boolean; onClick: () => void; top: string; bottom: string }) {
+  return (
+    <button disabled={disabled} onClick={onClick} style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, minWidth: 64, padding: '7px 12px', borderRadius: 10,
+      border: `1px solid ${active ? 'var(--qb-accent)' : 'var(--qb-border)'}`, background: active ? 'var(--qb-accent)' : 'var(--qb-card)',
+      cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1, boxShadow: 'none',
+    }}>
+      <span style={{ fontSize: 12.5, fontWeight: 650, color: active ? '#fff' : 'var(--qb-text)' }}>{top}</span>
+      <span style={{ fontSize: 11.5, fontVariantNumeric: 'tabular-nums', color: active ? 'rgba(255,255,255,0.85)' : 'var(--qb-muted)' }}>{bottom}</span>
+    </button>
   )
 }
 
@@ -674,85 +727,56 @@ function TopCustomersCard({ title, rows }: { title: string; rows: { name: string
   const [q, setQ] = useState('')
   const topCount  = rows[0]?.count || 1
   const visible   = q.trim()
-    ? rows.filter(c =>
-        c.name.toLowerCase().includes(q.toLowerCase()) ||
-        c.phone.includes(q)
-      )
+    ? rows.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || c.phone.includes(q))
     : rows
 
   return (
-    <div style={{ padding: 18, borderRadius: 14, border: '1px solid var(--qb-border)', background: 'var(--qb-card)' }}>
-      <div style={{ color: 'var(--qb-sub)', fontSize: 11, fontWeight: 800, letterSpacing: '0.18em', marginBottom: 12 }}>{title}</div>
-
-      {/* Search bar */}
+    <div style={card}>
+      <CardHead title={title} sub="Ranked by number of invoices" />
       <div style={{ position: 'relative', marginBottom: 12 }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke='var(--qb-faint)' strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <input
-          value={q} onChange={e => setQ(e.target.value)}
-          placeholder={`Search ${rows.length} customers…`}
-          style={{
-            width: '100%', boxSizing: 'border-box',
-            padding: '7px 10px 7px 30px', borderRadius: 8,
-            background: 'rgba(0,0,0,0.2)', border: '1px solid var(--qb-border)',
-            color: 'var(--qb-text)', fontSize: 12, outline: 'none',
-          }}
-        />
+        <Search size={14} aria-hidden style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--qb-faint)', pointerEvents: 'none' }} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${rows.length} customers…`}
+          style={{ width: '100%', boxSizing: 'border-box', padding: '9px 30px 9px 32px', borderRadius: 10, background: 'var(--qb-input)', border: '1px solid var(--qb-input-border)', color: 'var(--qb-text)', fontSize: 13.5, outline: 'none' }} />
         {q && (
-          <button onClick={() => setQ('')}
-            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--qb-muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>
+          <button onClick={() => setQ('')} aria-label="Clear search"
+            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--qb-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}>
             ×
           </button>
         )}
       </div>
 
       {visible.length === 0 && (
-        <div style={{ color: 'var(--qb-muted)', fontSize: 12, fontVariantNumeric: 'tabular-nums', padding: '8px 0' }}>
-          {rows.length === 0 ? 'No invoices in this period.' : `No match for "${q}"`}
+        <div style={{ color: 'var(--qb-muted)', fontSize: 13.5, padding: '8px 0' }}>
+          {rows.length === 0 ? 'No invoices in this period.' : `No match for “${q}”`}
         </div>
       )}
 
-      <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 480, overflowY: 'auto' }}>
+      <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
         {visible.map((c, i) => {
-          const globalRank = rows.indexOf(c)
-          const pct   = Math.round((c.count / topCount) * 100)
-          const medal = globalRank === 0 ? '🥇' : globalRank === 1 ? '🥈' : globalRank === 2 ? '🥉' : `${globalRank + 1}`
+          const rank = rows.indexOf(c)
           return (
-            <li key={c.name + i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--qb-text)', alignItems: 'baseline' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                  <span style={{ color: 'var(--qb-muted)', fontVariantNumeric: 'tabular-nums', marginRight: 6 }}>{medal}</span>
-                  <span style={{ color: 'var(--qb-text)', fontWeight: 700 }}>{c.name}</span>
-                  {c.phone && <span style={{ color: 'var(--qb-muted)', fontVariantNumeric: 'tabular-nums', fontSize: 11, marginLeft: 8 }}>· {c.phone}</span>}
-                </span>
-                <span style={{ color: TEAL, fontVariantNumeric: 'tabular-nums', fontWeight: 900, whiteSpace: 'nowrap' }}>
-                  {c.count} {c.count === 1 ? 'invoice' : 'invoices'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ flex: 1, height: 4, background: 'var(--qb-header)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: TEAL }} />
+            <li key={c.name + i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: 'grid', placeItems: 'center', fontSize: 12.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                background: rank < 3 ? 'var(--qb-amber-soft)' : 'var(--qb-fill)', color: rank < 3 ? 'var(--qb-amber)' : 'var(--qb-muted)' }}>{rank + 1}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13.5, alignItems: 'baseline' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                    <span style={{ color: 'var(--qb-text)', fontWeight: 650 }}>{c.name}</span>
+                    {c.phone && <span style={{ color: 'var(--qb-muted)', fontSize: 12, marginLeft: 8, fontVariantNumeric: 'tabular-nums' }}>{c.phone}</span>}
+                  </span>
+                  <span style={{ color: 'var(--qb-text)', fontWeight: 650, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{GHS(c.total)}</span>
                 </div>
-                <span style={{ color: 'var(--qb-faint)', fontSize: 10, fontVariantNumeric: 'tabular-nums', minWidth: 80, textAlign: 'right' }}>
-                  {GHS(c.total)}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
+                  <div style={{ flex: 1, height: 4, background: 'var(--qb-fill)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.round((c.count / topCount) * 100)}%`, height: '100%', background: ACC }} />
+                  </div>
+                  <span style={{ color: 'var(--qb-muted)', fontSize: 11.5, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{c.count} {c.count === 1 ? 'invoice' : 'invoices'}</span>
+                </div>
               </div>
             </li>
           )
         })}
       </ol>
-    </div>
-  )
-}
-
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ padding: 18, borderRadius: 14, border: '1px solid var(--qb-border)', background: 'var(--qb-card)' }}>
-      <div style={{ color: 'var(--qb-sub)', fontSize: 11, fontWeight: 800, letterSpacing: '0.18em', marginBottom: 14 }}>{title}</div>
-      {children}
     </div>
   )
 }

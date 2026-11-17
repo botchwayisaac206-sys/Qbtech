@@ -41,6 +41,11 @@ export const V = {
   red:         'var(--qb-red)',
   orange:      'var(--qb-orange)',
   green:       'var(--qb-green)',
+  amber:       'var(--qb-amber)',
+  accentSoft:  'var(--qb-accent-soft)',
+  greenSoft:   'var(--qb-green-soft)',
+  redSoft:     'var(--qb-red-soft)',
+  amberSoft:   'var(--qb-amber-soft)',
   shadow:      'var(--qb-shadow)',
 } as const
 

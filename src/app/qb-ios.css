@@ -172,6 +172,95 @@
 }
 .qb-icon-btn:hover { background: var(--qb-row-hover); }
 
+/* ============================================================================
+   The back office (/teamqtech). The admin page sets <html data-qb-area="admin">
+   so these override the site's glass tokens everywhere in the panel — portals
+   (dropdowns, dialogs) included. Solid surfaces, no wallpaper, an ink sidebar,
+   and one meaning per colour: blue = action, green = money in, red = money
+   out / problems, amber = owed or waiting.
+   ============================================================================ */
+[data-qb-area="admin"] { --qb-blur: none; }
+[data-qb-area="admin"] body::before { display: none; }
+
+[data-qb-area="admin"][data-qb-theme="light"] {
+  --qb-bg: #eef1f6;
+  --qb-card: #ffffff;
+  --qb-card-strong: #ffffff;
+  --qb-solid: #ffffff;
+  --qb-glass-edge: transparent;
+  --qb-border: #e2e7ef;
+  --qb-separator: #e6eaf1;
+  --qb-text: #0f172a;
+  --qb-sub: #475569;
+  --qb-muted: #64748b;
+  --qb-faint: #94a3b8;
+  --qb-fill: #f1f4f9;
+  --qb-input: #ffffff;
+  --qb-input-border: #cfd7e3;
+  --qb-header: #f6f8fb;
+  --qb-row-hover: #f1f5fb;
+  --qb-tag: #e8f0fe;
+  --qb-accent: #1f5fd6;
+  --qb-red: #c81e1e;
+  --qb-orange: #b45309;
+  --qb-green: #157f3c;
+  --qb-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 4px 14px rgba(15, 23, 42, 0.05);
+  --qb-side-bg: #0f1b2e;
+  --qb-side-text: #c7d2e3;
+  --qb-side-muted: #7f8ea6;
+  --qb-side-hover: rgba(255, 255, 255, 0.07);
+  --qb-side-line: rgba(255, 255, 255, 0.08);
+}
+[data-qb-area="admin"][data-qb-theme="dark"] {
+  --qb-bg: #0b1120;
+  --qb-card: #141c2c;
+  --qb-card-strong: #141c2c;
+  --qb-solid: #172033;
+  --qb-glass-edge: transparent;
+  --qb-border: #243049;
+  --qb-separator: #222d43;
+  --qb-text: #e8edf6;
+  --qb-sub: #a9b5c9;
+  --qb-muted: #8391a8;
+  --qb-faint: #5d6b83;
+  --qb-fill: #1b2538;
+  --qb-input: #101827;
+  --qb-input-border: #2c3a55;
+  --qb-header: #18213350;
+  --qb-row-hover: #1b2539;
+  --qb-tag: rgba(77, 141, 255, 0.18);
+  --qb-accent: #4d8dff;
+  --qb-red: #f87171;
+  --qb-orange: #fbbf24;
+  --qb-green: #4ade80;
+  --qb-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.25);
+  --qb-side-bg: #080e1a;
+  --qb-side-text: #c7d2e3;
+  --qb-side-muted: #6d7c95;
+  --qb-side-hover: rgba(255, 255, 255, 0.06);
+  --qb-side-line: rgba(255, 255, 255, 0.07);
+}
+[data-qb-area="admin"] [style*="var(--qb-card)"]:not([style*="box-shadow"]) { box-shadow: var(--qb-shadow); }
+
+/* Ink sidebar: its own text colours, whatever the page theme. */
+.qb-side { background: var(--qb-side-bg); color: var(--qb-side-text); }
+.qb-side .qb-nav-item { color: var(--qb-side-text); background: transparent; }
+.qb-side .qb-nav-item:not([data-active="true"]):hover { background: var(--qb-side-hover); color: #ffffff; }
+.qb-side .qb-nav-item[data-active="true"] { background: var(--qb-accent); color: #ffffff; box-shadow: none; }
+.qb-side .qb-icon-btn { background: var(--qb-side-hover); color: var(--qb-side-text); }
+.qb-side .qb-icon-btn:hover { background: rgba(255, 255, 255, 0.14); color: #ffffff; }
+
+/* Semantic soft fills, used behind KPI icons and status chips. */
+[data-qb-theme] {
+  --qb-amber: #b45309;
+  --qb-accent-soft: color-mix(in srgb, var(--qb-accent) 12%, transparent);
+  --qb-green-soft: color-mix(in srgb, var(--qb-green) 13%, transparent);
+  --qb-red-soft: color-mix(in srgb, var(--qb-red) 12%, transparent);
+  --qb-amber-soft: color-mix(in srgb, var(--qb-amber) 14%, transparent);
+}
+[data-qb-theme="dark"] { --qb-amber: #fbbf24; }
+[data-qb-area="admin"][data-qb-theme="light"] { --qb-amber-soft: #fdf4dc; --qb-green-soft: #e3f4e8; --qb-red-soft: #fde8e8; --qb-accent-soft: #e6eefc; }
+
 @media (prefers-reduced-motion: reduce) {
   .qb-ios, .qb-ios * { transition: none !important; }
   .qb-ios button:not(:disabled):active { transform: none; }

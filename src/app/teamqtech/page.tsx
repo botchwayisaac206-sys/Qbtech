@@ -31,9 +31,9 @@ import {
 import { useIsMobile } from '@/lib/useIsMobile'
 import { useQbTheme, V } from '@/lib/qbTheme'
 
-// QBNET brand blue, tuned toward iOS system blue. (Still called TEAL so the
-// rest of this file reads as before.) Every other colour is a --qb-* token.
-const TEAL = '#0a7cff'
+// The panel's action blue, from the admin palette in qb-ios.css. (Still called
+// TEAL so the rest of this file reads as before.) Every colour is a --qb-* token.
+const TEAL = 'var(--qb-accent)'
 
 // Icon for each admin tab (lucide).
 const TAB_ICON: Record<string, LucideIcon> = {
@@ -183,6 +183,14 @@ export default function AdminPage() {
     }
   }, [authed, role, isBoss, tab])
 
+  // The back office has its own solid palette (qb-ios.css, data-qb-area="admin").
+  // Set on <html> so dialogs and dropdowns rendered in portals pick it up too.
+  useEffect(() => {
+    const el = document.documentElement
+    el.setAttribute('data-qb-area', 'admin')
+    return () => el.removeAttribute('data-qb-area')
+  }, [])
+
   // Mark every tab the user visits so it stays mounted for the rest of the session.
   useEffect(() => {
     setVisited(prev => prev.has(tab) ? prev : new Set(prev).add(tab))
@@ -283,6 +291,7 @@ export default function AdminPage() {
     stock: 'Stock', transfers: 'Transfers', sales: 'Sales', invoice: 'New Invoice', invoices: 'Invoices',
     expenses: 'Expenses', deliveries: 'Deliveries', debtors: 'Debtors', staff: 'Staff', history: 'History', log: 'Log', suppliers: 'Suppliers & costs',
   } as Record<TabKey, string>)[t] || String(t)
+  const groupOf = (t: TabKey) => NAV_GROUPS.find(g => g.tabs.includes(t))?.title || ''
   const pick = (t: TabKey) => { setTab(t); setNavMenu(false) }
   const rail = collapsed && !isMobile
   const initials = (staffName || (isSuperBoss ? 'Big Boss' : isBoss ? 'Boss' : 'Staff'))
@@ -292,24 +301,25 @@ export default function AdminPage() {
   const ActiveIcon = TAB_ICON[tab]
 
   const sidebar = (
-    // A floating frosted panel, like the iPad sidebar. On a phone it slides in.
-    <aside style={{
+    // An ink panel fixed to the left edge, so the page always has the same
+    // frame: menu on the left, where-you-are along the top. On a phone it slides in.
+    <aside className="qb-side" style={{
       // alignSelf keeps the panel from stretching to the page height, which
       // would leave sticky nothing to stick within.
-      width: rail ? 76 : 256, flexShrink:0, alignSelf:'flex-start', position: isMobile ? 'fixed' : 'sticky', zIndex:60,
-      top: isMobile ? 10 : 12, left: isMobile ? 10 : undefined, bottom: isMobile ? 10 : undefined,
-      height: isMobile ? undefined : 'calc(100vh - 24px)', margin: isMobile ? 0 : '12px 0 12px 12px',
+      width: rail ? 76 : 248, flexShrink:0, alignSelf:'flex-start', position: isMobile ? 'fixed' : 'sticky', zIndex:60,
+      top: 0, left: isMobile ? 0 : undefined, bottom: isMobile ? 0 : undefined,
+      height: isMobile ? undefined : '100vh', margin: 0,
       transform: isMobile && !navMenu ? 'translateX(calc(-100% - 20px))' : 'none',
-      background: V.cardStrong, border:`1px solid ${V.border}`, borderRadius:24, boxShadow: V.shadow,
+      borderRadius: isMobile ? '0 18px 18px 0' : 0, boxShadow: isMobile ? '0 20px 50px rgba(0,0,0,0.35)' : 'none',
       display:'flex', flexDirection:'column', overflow:'hidden', transition:'width 0.25s cubic-bezier(0.32,0.72,0,1), transform 0.35s cubic-bezier(0.32,0.72,0,1)',
     }}>
       {/* Brand */}
-      <div style={{ display:'flex', alignItems:'center', gap:11, padding: rail ? '18px 0 14px' : '18px 16px 14px', justifyContent: rail ? 'center' : 'flex-start' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:11, padding: rail ? '18px 0 16px' : '18px 16px 16px', justifyContent: rail ? 'center' : 'flex-start', borderBottom:'1px solid var(--qb-side-line)', marginBottom:10 }}>
         <QbnetLogo size={rail ? 40 : 38} radius={11} />
         {!rail && (
           <div style={{ minWidth:0, flex:1 }}>
-            <div style={{ color: V.text, fontWeight:700, fontSize:16, letterSpacing:'-0.01em' }}>QBNET TECH SOLUTIONS</div>
-            <div style={{ color: V.sub, fontSize:12.5 }}>Stock and invoicing</div>
+            <div style={{ color:'#fff', fontWeight:800, fontSize:14.5, letterSpacing:'0.01em', lineHeight:1.2 }}>QBNET TECH</div>
+            <div style={{ color:'var(--qb-side-muted)', fontSize:12 }}>Back office</div>
           </div>
         )}
         {isMobile && (
@@ -325,8 +335,8 @@ export default function AdminPage() {
           return (
             <div key={g.title}>
               {rail
-                ? <div style={{ height:1, background: V.separator, margin:'0 10px 10px' }} />
-                : <div style={{ color: V.text, fontSize:13, fontWeight:700, padding:'0 10px 6px' }}>{g.title}</div>}
+                ? <div style={{ height:1, background:'var(--qb-side-line)', margin:'0 10px 10px' }} />
+                : <div style={{ color:'var(--qb-side-muted)', fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', padding:'0 11px 6px' }}>{g.title}</div>}
               <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
                 {items.map(t => {
                   const Icon = TAB_ICON[t]
@@ -340,12 +350,12 @@ export default function AdminPage() {
                         position:'relative', display:'flex', alignItems:'center', gap:11, width:'100%',
                         justifyContent: rail ? 'center' : 'flex-start',
                         padding: rail ? '10px 0' : '9px 11px', borderRadius:12, border:'none', cursor:'pointer', textAlign:'left',
-                        fontFamily:'inherit', fontWeight: active ? 600 : 500, fontSize:15,
+                        fontFamily:'inherit', fontWeight: active ? 650 : 500, fontSize:14.5,
                       }}>
-                      {Icon && <Icon size={19} strokeWidth={active ? 2.2 : 1.9} style={{ color: active ? 'inherit' : TEAL, flexShrink:0 }} />}
+                      {Icon && <Icon size={18} strokeWidth={active ? 2.2 : 1.9} style={{ color: active ? 'inherit' : 'var(--qb-side-muted)', flexShrink:0 }} />}
                       {!rail && <span style={{ flex:1 }}>{labelOf(t)}</span>}
                       {rail
-                        ? (t === 'transfers' && pendingApprovals > 0 && <span style={{ position:'absolute', top:6, right:12, width:8, height:8, borderRadius:8, background:'#ff9f0a' }} />)
+                        ? (t === 'transfers' && pendingApprovals > 0 && <span style={{ position:'absolute', top:6, right:12, width:8, height:8, borderRadius:8, background:'#f59e0b' }} />)
                         : countBadge(t)}
                     </button>
                   )
@@ -357,14 +367,14 @@ export default function AdminPage() {
       </nav>
 
       {/* Who is signed in, and the session controls */}
-      <div style={{ padding:12, borderTop:`1px solid ${V.separator}` }}>
+      <div style={{ padding:12, borderTop:'1px solid var(--qb-side-line)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, flexDirection: rail ? 'column' : 'row' }}>
           <div style={{ width:36, height:36, borderRadius:'50%', flexShrink:0, display:'grid', placeItems:'center', fontWeight:600, fontSize:14, color:'#fff',
-            background:`linear-gradient(180deg, #5aa8ff, ${TEAL})` }}>{initials}</div>
+            background: TEAL }}>{initials}</div>
           {!rail && (
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ color: V.text, fontWeight:600, fontSize:14, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{staffName || (isBoss ? 'Boss' : 'Staff')}</div>
-              <div style={{ color: V.sub, fontSize:12.5 }}>{isSuperBoss ? 'Big Boss' : isBoss ? (readOnly ? 'Boss, view only' : 'Boss') : 'Cashier'}</div>
+              <div style={{ color:'#fff', fontWeight:600, fontSize:14, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{staffName || (isBoss ? 'Boss' : 'Staff')}</div>
+              <div style={{ color:'var(--qb-side-muted)', fontSize:12.5 }}>{isSuperBoss ? 'Big Boss' : isBoss ? (readOnly ? 'Boss, view only' : 'Boss') : 'Cashier'}</div>
             </div>
           )}
           <div style={{ display:'flex', gap:6, flexDirection: rail ? 'column' : 'row' }}>
@@ -402,31 +412,39 @@ export default function AdminPage() {
       {noStockMenu.element}
 
       <main style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column' }}>
-        {/* ── Header: a translucent bar with an iOS large title ── */}
+        {/* ── Top bar: where you are (section › page), the date and who is signed in ── */}
         <header style={{
           position:'sticky', top:0, zIndex:40, display:'flex', alignItems:'center', gap:12,
-          padding: isMobile ? '10px 14px' : '22px 28px 14px',
-          background: isMobile ? V.cardStrong : 'transparent',
-          borderBottom: isMobile ? `1px solid ${V.separator}` : 'none',
+          padding: isMobile ? '10px 14px' : '14px 28px',
+          background: V.card, borderBottom:`1px solid ${V.border}`, boxShadow:'none',
         }}>
           {isMobile && (
             <button onClick={() => setNavMenu(true)} aria-label="Open menu" className="qb-icon-btn" style={{ position:'relative', width:38, height:38 }}>
               <Menu size={19} />
-              {pendingApprovals > 0 && <span style={{ position:'absolute', top:-1, right:-1, width:10, height:10, borderRadius:10, background:'#ff9f0a' }} />}
+              {pendingApprovals > 0 && <span style={{ position:'absolute', top:-1, right:-1, width:10, height:10, borderRadius:10, background:'#f59e0b' }} />}
             </button>
           )}
+          {!isMobile && ActiveIcon && (
+            <span aria-hidden style={{ width:40, height:40, borderRadius:12, display:'grid', placeItems:'center', background: V.accentSoft, color: TEAL, flexShrink:0 }}>
+              <ActiveIcon size={20} strokeWidth={2.2} />
+            </span>
+          )}
           <div style={{ minWidth:0, flex:1 }}>
-            <div style={{ color: V.sub, fontSize: isMobile ? 12 : 13, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-              {new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })}
+            <div style={{ color: V.muted, fontSize:12, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {groupOf(tab)}{groupOf(tab) && <span style={{ margin:'0 6px', color: V.faint }}>›</span>}{labelOf(tab)}
             </div>
-            <h1 style={{ display:'flex', alignItems:'center', gap:10, color: V.text, fontWeight:700, fontSize: isMobile ? 22 : 34, letterSpacing: isMobile ? '-0.015em' : '-0.025em', lineHeight:1.1, margin:'2px 0 0' }}>
-              {!isMobile && ActiveIcon && <ActiveIcon size={26} strokeWidth={2.2} style={{ color: TEAL }} aria-hidden />}
+            <h1 style={{ color: V.text, fontWeight:750, fontSize: isMobile ? 20 : 24, letterSpacing:'-0.02em', lineHeight:1.15, margin:'1px 0 0' }}>
               {labelOf(tab)}
             </h1>
           </div>
           {!isMobile && (
-            <div className="greet-banner" style={{ color: V.sub, fontSize:15, whiteSpace:'nowrap', padding:'8px 14px', borderRadius:999, background: V.card, border:`1px solid ${V.border}` }}>
-              {greeting}{staffName ? <>, <span style={{ color: V.text, fontWeight:600 }}>{staffName}</span></> : ''}
+            <div className="greet-banner" style={{ textAlign:'right', lineHeight:1.3 }}>
+              <div style={{ color: V.text, fontSize:14, fontWeight:600, whiteSpace:'nowrap' }}>
+                {greeting}{staffName ? `, ${staffName}` : ''}
+              </div>
+              <div style={{ color: V.muted, fontSize:12.5, whiteSpace:'nowrap' }}>
+                {new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}
+              </div>
             </div>
           )}
         </header>

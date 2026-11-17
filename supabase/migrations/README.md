@@ -7,7 +7,7 @@ Two one-time steps to activate the Sales & Invoice features in the admin panel.
 Open the Supabase dashboard → **SQL Editor** → paste and run:
 
 1. `20260417_sales_system.sql` — creates `user_roles`, `invoices`, `invoice_items`, `product_watches`, `watch_alerts`, `expenses`, `audit_log` + RLS policies + triggers.
-2. `20260417_seed_dummy_sales.sql` — seeds ~1000 demo invoices + line items + expenses spread across the last 3 years (idempotent — re-running is safe).
+Do not seed demo sales. If the database still has the old demo rows (`INV-DEMO-…` / `INV-FOCUS-…` invoices), run `../clear_dummy_data.sql` to remove them.
 
 ## 2. Assign roles to your users
 
