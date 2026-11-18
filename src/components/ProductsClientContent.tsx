@@ -131,7 +131,7 @@ function ProductsContent() {
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[]
 
   return (
-    <div className="px-5 pb-24 pt-10">
+    <div className="px-4 pb-24 pt-8 sm:px-5 sm:pt-10">
       <div className="mx-auto max-w-6xl">
         <h1 className="section-title text-[2rem] sm:text-[2.6rem]">{pageTitle}</h1>
         <p className="mt-1 text-[15px] text-qb-sub">
@@ -140,7 +140,8 @@ function ProductsContent() {
 
         {/* Filter bar */}
         <div className="mt-6 flex flex-wrap gap-2">
-          <label className="relative min-w-[200px] flex-1">
+          {/* Phones: the search takes its own row, the two buttons share the next. */}
+          <label className="relative min-w-0 basis-full sm:min-w-[200px] sm:flex-1 sm:basis-auto">
             <span className="sr-only">Search products</span>
             <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-qb-faint" />
             <input type="search" placeholder="Search products, models or brands" value={search}
@@ -148,11 +149,11 @@ function ProductsContent() {
               className="qb-field !rounded-full !pl-10" />
           </label>
           <button type="button" onClick={() => setInStockOnly(!inStockOnly)} aria-pressed={inStockOnly}
-            className={`rounded-full px-4 py-2.5 text-[15px] font-medium transition-colors ${inStockOnly ? 'bg-qb-accent text-white' : 'border border-qb-border bg-qb-card text-qb-text'}`}>
+            className={`flex-1 rounded-full px-4 py-2.5 text-[15px] font-medium transition-colors sm:flex-none ${inStockOnly ? 'bg-qb-accent text-white' : 'border border-qb-border bg-qb-card text-qb-text'}`}>
             In stock
           </button>
           <button type="button" onClick={() => setSidebarOpen(!sidebarOpen)} aria-expanded={sidebarOpen}
-            className="flex items-center gap-2 rounded-full border border-qb-border bg-qb-card px-4 py-2.5 text-[15px] font-medium text-qb-text lg:hidden">
+            className="flex flex-1 items-center justify-center gap-2 rounded-full border border-qb-border bg-qb-card px-4 py-2.5 text-[15px] font-medium text-qb-text sm:flex-none lg:hidden">
             <SlidersHorizontal size={16} /> Categories
           </button>
         </div>
@@ -170,8 +171,9 @@ function ProductsContent() {
         )}
 
         {/* Sidebar + grid */}
-        <div className="mt-6 flex items-start gap-6">
-          <div className={`w-56 shrink-0 ${sidebarOpen ? 'block' : 'hidden'} lg:sticky lg:top-24 lg:block`}>
+        {/* Phones and tablets: the categories open above the products, full width, not beside them. */}
+        <div className="mt-6 flex flex-col items-stretch gap-6 lg:flex-row lg:items-start">
+          <div className={`w-full shrink-0 lg:w-56 ${sidebarOpen ? 'block' : 'hidden'} lg:sticky lg:top-24 lg:block`}>
             <Suspense fallback={null}>
               <CategorySidebar />
             </Suspense>

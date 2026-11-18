@@ -104,7 +104,7 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  useEffect(() => { setMobileOpen(false); setMegaOpen(false) }, [pathname])
+  useEffect(() => { setMobileOpen(false); setMegaOpen(false); setSearchOpen(false) }, [pathname])
 
   // A short delay lets the pointer travel from the trigger into the panel.
   const openMega  = () => { if (closeTimer.current) clearTimeout(closeTimer.current); setMegaOpen(true) }
@@ -123,14 +123,15 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 px-3 pt-3 transition-transform duration-300 ease-out sm:px-5"
-      style={{ transform: hidden && !mobileOpen && !megaOpen ? 'translateY(-120%)' : 'none' }}>
+      style={{ transform: hidden && !mobileOpen && !megaOpen && !searchOpen ? 'translateY(-120%)' : 'none' }}>
       <nav aria-label="Main" className="glass-strong mx-auto max-w-6xl rounded-[22px] sm:rounded-full">
         <div className="flex h-14 items-center gap-2 pl-3 pr-2 sm:pl-4">
 
           {/* Wordmark */}
-          <Link href="/" className="mr-2 flex shrink-0 items-center gap-2.5" aria-label="QBNET TECH SOLUTIONS home">
+          <Link href="/" className="mr-1 flex min-w-0 shrink-0 items-center gap-2 sm:mr-2 sm:gap-2.5" aria-label="QBNET TECH SOLUTIONS home">
             <QbnetLogo size={34} radius={10} />
-            <span className="text-[17px] font-bold leading-none tracking-tight text-qb-text">QBNET<span className="font-medium text-qb-sub"> Tech Solutions</span></span>
+            {/* The full name needs ~190px; on the narrowest phones it shortens so the buttons keep their room. */}
+            <span className="whitespace-nowrap text-[16px] font-bold leading-none tracking-tight text-qb-text sm:text-[17px]">QBNET<span className="hidden font-medium text-qb-sub min-[400px]:inline"> Tech Solutions</span></span>
           </Link>
 
           {/* Desktop links */}
@@ -202,17 +203,19 @@ export default function Navbar() {
           </div>
 
           {/* Actions */}
-          <div className="ml-auto flex items-center gap-1.5">
-            {searchOpen ? (
-              <form onSubmit={submitSearch} className="flex items-center gap-1" role="search">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
+            {/* Wider screens: the search field opens in the bar itself. */}
+            {searchOpen && (
+              <form onSubmit={submitSearch} className="hidden items-center gap-1 sm:flex" role="search">
                 <input autoFocus type="search" value={query} onChange={e => setQuery(e.target.value)}
                   placeholder="Search products" aria-label="Search products"
-                  className="qb-field !w-40 !rounded-full !py-1.5 sm:!w-56" />
-                <button type="button" aria-label="Close search" onClick={() => { setSearchOpen(false); setQuery('') }} className="qb-icon-btn"><X size={16} /></button>
+                  className="qb-field !w-56 !rounded-full !py-1.5" />
               </form>
-            ) : (
-              <button type="button" aria-label="Search products" onClick={() => setSearchOpen(true)} className="qb-icon-btn"><Search size={16} /></button>
             )}
+            <button type="button" aria-label={searchOpen ? 'Close search' : 'Search products'} aria-expanded={searchOpen}
+              onClick={() => { setSearchOpen(o => !o); setQuery(''); setMobileOpen(false) }} className="qb-icon-btn">
+              {searchOpen ? <X size={16} /> : <Search size={16} />}
+            </button>
             <button type="button" onClick={toggle} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} className="qb-icon-btn">
               {dark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
@@ -220,12 +223,27 @@ export default function Navbar() {
               className="btn-whatsapp hidden !px-4 !py-2 !text-[15px] md:inline-flex">
               <WhatsAppGlyph /> WhatsApp
             </a>
-            <button type="button" onClick={() => setMobileOpen(o => !o)} aria-expanded={mobileOpen} aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            <button type="button" onClick={() => { setMobileOpen(o => !o); setSearchOpen(false) }} aria-expanded={mobileOpen} aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
               className="qb-icon-btn lg:hidden">
               {mobileOpen ? <X size={17} /> : <Menu size={17} />}
             </button>
           </div>
         </div>
+
+        {/* Phones: search gets a full-width row under the bar, never squeezed into it. */}
+        {searchOpen && (
+          <form onSubmit={submitSearch} role="search" className="flex items-center gap-2 border-t border-qb-separator px-3 pb-3 pt-2.5 sm:hidden"
+            style={{ animation: 'qb-rise 0.18s ease both' }}>
+            <label className="relative min-w-0 flex-1">
+              <span className="sr-only">Search products</span>
+              <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-qb-faint" />
+              <input autoFocus type="search" enterKeyHint="search" value={query} onChange={e => setQuery(e.target.value)}
+                placeholder="Search products, models or brands"
+                className="qb-field !w-full !rounded-full !py-2.5 !pl-10" />
+            </label>
+            <button type="submit" disabled={!query.trim()} className="btn-primary shrink-0 !px-4 !py-2.5 !text-[15px] disabled:opacity-50">Search</button>
+          </form>
+        )}
 
         {/* Mobile menu */}
         {mobileOpen && (

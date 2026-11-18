@@ -34,25 +34,35 @@ export default async function SearchPage({ searchParams }: PageProps) {
   const results = query ? await searchProducts(query) : []
 
   return (
-    <div className="px-5 pb-24 pt-12">
+    <div className="px-4 pb-24 pt-8 sm:px-5 sm:pt-12">
       <div className="mx-auto max-w-6xl">
-        <h1 className="section-title text-[2rem] sm:text-[2.5rem]">
+        <h1 className="section-title break-words text-[2rem] sm:text-[2.5rem]">
           {query ? <>Results for &ldquo;{query}&rdquo;</> : 'Search products'}
         </h1>
         {query && (
           <p className="mt-2 text-[17px] text-qb-sub">{results.length} result{results.length !== 1 ? 's' : ''}</p>
         )}
 
-        <div className="mt-10">
+        {/* A plain form, so it works before any script loads. Full width on a phone. */}
+        <form action="/search" method="get" role="search" className="mt-6 flex max-w-xl gap-2">
+          <label className="relative min-w-0 flex-1">
+            <span className="sr-only">Search products</span>
+            <input type="search" name="q" defaultValue={query} enterKeyHint="search"
+              placeholder="Product name or model number" className="qb-field !w-full !rounded-full" />
+          </label>
+          <button type="submit" className="btn-primary shrink-0 !px-5 !py-2.5 !text-[15px]">Search</button>
+        </form>
+
+        <div className="mt-8 sm:mt-10">
           {!query && (
-            <div className="glass p-12 text-center text-[17px] text-qb-sub">
-              Search by product name or model number with the search button at the top of the page.
+            <div className="glass p-8 text-center text-[17px] text-qb-sub sm:p-12">
+              Search by product name or model number.
             </div>
           )}
 
           {query && results.length === 0 && (
-            <div className="glass p-12 text-center">
-              <h2 className="text-[20px] font-semibold text-qb-text">Nothing matches &ldquo;{query}&rdquo;</h2>
+            <div className="glass p-8 text-center sm:p-12">
+              <h2 className="break-words text-[20px] font-semibold text-qb-text">Nothing matches &ldquo;{query}&rdquo;</h2>
               <p className="mx-auto mt-2 max-w-md text-[16px] text-qb-sub">
                 Try a model number, such as DS-2CD2143G2-I, or a shorter name. We may also have it in the shop, so give us a call.
               </p>
