@@ -22,10 +22,12 @@ import StaffManager from '@/components/admin/StaffManager'
 import AuditLog from '@/components/admin/AuditLog'
 import Suppliers from '@/components/admin/Suppliers'
 import ReadOnlyGuard from '@/components/admin/ReadOnlyGuard'
+import ScanTab from '@/components/admin/ScanTab'
+import { TrialBadge, TrialLock, useTrial } from '@/components/admin/TrialGate'
 import { useRole } from '@/lib/sales'
 import {
   BarChart3, FilePlus2, Files, Wallet, Truck, Users,
-  Boxes, ArrowLeftRight, History, Search, PackageCheck,
+  Boxes, ArrowLeftRight, History, Search, PackageCheck, ScanBarcode,
   Moon, Sun, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react'
 import { useIsMobile } from '@/lib/useIsMobile'
@@ -38,7 +40,7 @@ const TEAL = 'var(--qb-accent)'
 // Icon for each admin tab (lucide).
 const TAB_ICON: Record<string, LucideIcon> = {
   sales: BarChart3, invoice: FilePlus2, invoices: Files, expenses: Wallet,
-  deliveries: Truck, debtors: HandCoins, staff: Users,
+  deliveries: Truck, debtors: HandCoins, staff: Users, scan: ScanBarcode,
   stock: Boxes, transfers: ArrowLeftRight,
   history: Search, log: History, suppliers: PackageCheck,
 }
@@ -51,7 +53,7 @@ const CASHIER_TABS = new Set([
   // Transfers is staff work — restocking the shop floor from the back
   // warehouses is a daily job, and transfer_stock() already limits writes to
   // the Big Boss and cashiers.
-  'invoice', 'expenses', 'deliveries', 'transfers',
+  'invoice', 'scan', 'expenses', 'deliveries', 'transfers',
   // A customer settling a debt pays whoever is at the counter.
   'debtors',
 ])
@@ -77,6 +79,8 @@ function useToast() {
 // ── Admin Page ───────────────────────────────────────────────
 export default function AdminPage() {
   const { show, Toast } = useToast()
+  // The 14-day trial: a countdown in the top bar, and a lock when it runs out.
+  const trial = useTrial()
   const [authed,      setAuthed]      = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
   const [email,       setEmail]       = useState('')
@@ -85,7 +89,7 @@ export default function AdminPage() {
   // Light/dark lives on <html data-qb-theme>, remembered per browser and
   // defaulting to the system setting. `darkMode` is still passed to tabs that ask.
   const { dark: darkMode, toggle: toggleDark } = useQbTheme()
-  const [tab,         setTab]         = useState<'stock'|'transfers'|'sales'|'invoice'|'invoices'|'history'|'expenses'|'deliveries'|'debtors'|'staff'|'log'|'suppliers'>('sales')
+  const [tab,         setTab]         = useState<'scan'|'stock'|'transfers'|'sales'|'invoice'|'invoices'|'history'|'expenses'|'deliveries'|'debtors'|'staff'|'log'|'suppliers'>('sales')
   // Set of tab keys that have been visited at least once. A visited tab is
   // kept mounted (hidden via display:none when inactive) so its data and
   // in-progress state survive across tab switches. Never cleared during a
@@ -216,6 +220,11 @@ export default function AdminPage() {
     </div>
   )
 
+  // ── Trial over: nothing opens until the full version is paid for ──
+  if (trial.ready && trial.expired) return (
+    <TrialLock onSignOut={authed ? () => { supabase.auth.signOut(); setAuthed(false) } : undefined} />
+  )
+
   // ── Login screen ─────────────────────────────────────────
   // Split screen: the brand on an ink panel to the left, the form to the right.
   // On a phone the brand panel shrinks to a strip above the form.
@@ -278,7 +287,7 @@ export default function AdminPage() {
   // Selling prices are set on the Stock tab (Big Boss only).
   type TabKey = typeof tab
   const NAV_GROUPS: { title: string; tabs: TabKey[] }[] = [
-    { title: 'Counter',   tabs: ['invoice', 'invoices', 'debtors', 'deliveries', 'expenses'] },
+    { title: 'Counter',   tabs: ['invoice', 'scan', 'invoices', 'debtors', 'deliveries', 'expenses'] },
     { title: 'Inventory', tabs: ['stock', 'transfers', 'suppliers', 'history'] },
     { title: 'Business',  tabs: ['sales', 'staff', 'log'] },
   ]
@@ -288,7 +297,7 @@ export default function AdminPage() {
     return true
   }
   const labelOf = (t: TabKey) => ({
-    stock: 'Stock', transfers: 'Transfers', sales: 'Sales', invoice: 'New Invoice', invoices: 'Invoices',
+    scan: 'Scan', stock: 'Stock', transfers: 'Transfers', sales: 'Sales', invoice: 'New Invoice', invoices: 'Invoices',
     expenses: 'Expenses', deliveries: 'Deliveries', debtors: 'Debtors', staff: 'Staff', history: 'History', log: 'Log', suppliers: 'Suppliers & costs',
   } as Record<TabKey, string>)[t] || String(t)
   const groupOf = (t: TabKey) => NAV_GROUPS.find(g => g.tabs.includes(t))?.title || ''
@@ -437,6 +446,7 @@ export default function AdminPage() {
               {labelOf(tab)}
             </h1>
           </div>
+          {trial.ready && <TrialBadge trial={trial} compact={isMobile} />}
           {!isMobile && (
             <div className="greet-banner" style={{ textAlign:'right', lineHeight:1.3 }}>
               <div style={{ color: V.text, fontSize:14, fontWeight:600, whiteSpace:'nowrap' }}>
@@ -472,6 +482,13 @@ export default function AdminPage() {
             <ReadOnlyGuard active={readOnly}>
               <InvoiceWorkspace onSaved={() => show('Invoice saved · print dialog opened')} userId={userId} />
             </ReadOnlyGuard>
+          </div>
+        )}
+
+        {/* Scan — what a barcode is, its price and where the stock is */}
+        {visited.has('scan') && (
+          <div style={{ display: tab === 'scan' ? 'block' : 'none' }}>
+            <ScanTab canLink={!readOnly} />
           </div>
         )}
 

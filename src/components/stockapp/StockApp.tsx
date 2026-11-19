@@ -15,6 +15,7 @@ import CameraScanner from '@/components/admin/CameraScanner'
 import { settleAfterDelay } from '@/lib/stockApproval'
 import ModelPicker, { type PickerOption } from '@/components/admin/ModelPicker'
 import BossView from '@/components/stockapp/BossView'
+import { TrialLock, useTrial } from '@/components/admin/TrialGate'
 
 /**
  * Stock moves, on a phone — /s-quxf5u4k84, installable to the home screen.
@@ -172,7 +173,14 @@ const lbl: React.CSSProperties = {
 }
 const pickerTheme = { menuBg: '#ffffff', border: LINE, text: TEXT, sub: SUB, accent: TEAL, accentText: '#fff' }
 
+/** The trial lock sits in front of the whole app; see src/lib/trial.ts. */
 export default function StockApp() {
+  const trial = useTrial()
+  if (trial.ready && trial.expired) return <TrialLock onSignOut={() => { supabase.auth.signOut() }} />
+  return <StockAppInner />
+}
+
+function StockAppInner() {
   const [checking, setChecking] = useState(true)
   const [authed, setAuthed] = useState(false)
   const role = useRole()
