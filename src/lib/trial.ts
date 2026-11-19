@@ -18,7 +18,7 @@ import { useEffect, useState } from 'react'
  * latest time ever seen is also kept in the browser for the same reason.
  */
 export const TRIAL_DAYS = 14
-const DEFAULT_START = '2026-11-19'
+const DEFAULT_START = '2026-11-20'
 
 const DAY = 24 * 60 * 60 * 1000
 const SEEN_KEY = 'qbnet.trialSeen'
